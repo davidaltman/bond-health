@@ -239,20 +239,36 @@ one.
 
 These are real blockers, not paperwork.
 
-1. **The repo does not currently run.** There is no `server/.env`, and the ElevenLabs sandbox key is
-   gone. The Bedrock path additionally assumed an AWS profile that no longer applies to this
-   personal project. Phase 0 wires a single personal LLM provider and makes `npm run dev` work from
-   a clean clone — the brief asks for "a repo we can actually open and run," so this is a hard gate.
-2. **Prune before sharing.** `transcripts/` contains Bond's NDA'd demo transcript and my own
-   interview-prep notes. Neither belongs in a submission. The moved prior-art doc also references a
-   previous employer's customers and internal paths and needs scrubbing. Both are already in git
-   history, so pruning means rewriting history or submitting from a fresh repo.
-3. **Cost.** Per-turn extraction plus a decision pass on every turn is more model calls than the old
-   post-call design. Expected to stay inside an existing subscription at demo scale; if not, the
-   brief says to say so rather than quietly cut scope.
+1. **~~The repo does not run.~~ Resolved for the conversation path.** `server/.env` is wired to a
+   personal ElevenLabs sandbox account (Creator tier, holds only the eight `Bond-Daphne-*` agents).
+   Backend, frontend, and a live signed-URL round trip to ElevenLabs all verified. The server now
+   loads its own `.env` via `--env-file-if-exists`, so `npm run dev` works from a clean clone
+   without a wrapper script.
+2. **Extraction still has no provider.** `/api/summarize` returns
+   `Could not load credentials from any providers`. The old path used a previous employer's AWS SSO
+   profile, which does not belong in a personal job-application project. Needs a personal key
+   (OpenAI or Anthropic) behind a small provider abstraction — the last Phase 0 task.
+3. **Prune before sharing.** `transcripts/` contains Bond's NDA'd demo transcript and my own
+   interview-prep notes. Neither belongs in a submission. The prior-art doc in `docs/` also
+   references a previous employer's customers and internal paths. Both are already in git history,
+   so the submission ships from a **separate clean-history repo** — decided, not yet done.
+4. **Cost.** Per-turn extraction plus a decision pass on every turn is more model calls than the old
+   post-call design. The ElevenLabs sandbox has roughly 93k characters left on its monthly quota,
+   which is enough for demo and eval runs but not for careless looping. If it becomes a real
+   constraint the brief says to say so rather than quietly cut scope.
 
 ## Running it
 
-To be written in Phase 0, verified from a clean clone. Until then, see
-[`docs/prior-art-daphne-history-demo.md`](docs/prior-art-daphne-history-demo.md) for how the
-prior prototype ran.
+```bash
+cp server/.env.example server/.env      # then set BOND_ELEVEN_LABS_API_KEY
+(cd server && npm install && npm run dev)      # http://127.0.0.1:8790
+(cd frontend && npm install && npm run dev)    # http://127.0.0.1:5190
+```
+
+Or `scripts/restart_local_servers.sh` to do both, with port cleanup and health checks.
+
+Verified working: `/api/health`, `/api/agents` (8 agents), and `/api/signed-url`, which performs a
+real round trip to ElevenLabs and returns a `wss://` conversation URL. A voice call needs only a
+microphone and browser permission.
+
+Not yet working: `/api/summarize`, pending the provider decision in open item 2 above.
