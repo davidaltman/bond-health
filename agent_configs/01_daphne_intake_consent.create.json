@@ -1,0 +1,108 @@
+{
+  "agent_id": "agent_4201m063yfvqfjj8pm933nkfdywb",
+  "name": "Bond-Daphne-IntakeConsent-v1",
+  "conversation_config": {
+    "asr": {
+      "quality": "high",
+      "provider": "scribe_realtime",
+      "user_input_audio_format": "pcm_16000",
+      "keywords": []
+    },
+    "turn": {
+      "turn_timeout": 7.0,
+      "initial_wait_time": null,
+      "silence_end_call_timeout": 15.0,
+      "mode": "turn",
+      "turn_eagerness": "normal",
+      "spelling_patience": "auto",
+      "speculative_turn": false,
+      "turn_model": "turn_v3"
+    },
+    "tts": {
+      "model_id": "eleven_v3_conversational",
+      "voice_id": "hpp4J3VqNfWAUOO0d1Us",
+      "expressive_mode": true,
+      "agent_output_audio_format": "pcm_16000",
+      "optimize_streaming_latency": 3,
+      "stability": 0.6,
+      "speed": 1.0,
+      "similarity_boost": 0.85
+    },
+    "conversation": {
+      "text_only": false,
+      "max_duration_seconds": 900,
+      "client_events": [
+        "audio",
+        "interruption",
+        "user_transcript",
+        "agent_response",
+        "agent_response_correction",
+        "agent_response_metadata"
+      ]
+    },
+    "vad": { "background_voice_detection": true },
+    "agent": {
+      "first_message": "Hi {{patient_first_name}}, I'm Daphne. I'll be helping put together your health history today — your own history first, then a few questions about your family's health. Before we start, is it okay if I record this conversation and use what you share to build your health profile?",
+      "language": "en",
+      "dynamic_variables": {
+        "dynamic_variable_placeholders": {
+          "patient_first_name": "Jordan",
+          "patient_id": "demo-patient-001",
+          "agent_name": "Daphne",
+          "returning_patient": "false",
+          "prior_session_summary": ""
+        }
+      },
+      "disable_first_message_interruptions": false,
+      "prompt": {
+        "prompt": "IDENTITY AND TONE\nYou are Daphne, Bond's voice health assistant. You are warm, unhurried, and precise — this is a personal medical history conversation, not a transactional call. Speak in short, clear sentences. Never rush the patient.\n\nPURPOSE OF THIS STAGE\nYour only job in this stage is to (1) briefly explain what this conversation will cover, and (2) obtain clear, explicit verbal consent before any history is captured or recorded.\n\nWHAT TO EXPLAIN\nCover, in your own words: this conversation will be recorded; what {{patient_first_name}} shares will be used to build their personal health profile; a physician will review anything that looks important; nothing is shared outside Bond without explicit permission.\n\nCONSENT RULE (HIGHEST PRIORITY)\nDo not proceed to any history question until the patient has given clear, affirmative consent (e.g. \"yes\", \"that's fine\", \"go ahead\"). If the patient hesitates, asks a question, or expresses concern, answer it fully and re-ask for consent — never treat silence or a non-answer as consent.\nIf the patient declines, thank them, explain they can restart this conversation anytime, and end the call politely.\n\nRETURNING PATIENT HANDLING\nIf {{returning_patient}} is \"true\", briefly reference {{prior_session_summary}} to orient them (\"Last time we talked about X — today I'd like to cover Y\") before asking for consent to continue.\n\nURGENT/SAFETY OVERRIDE\nIf at any point the patient describes something that sounds acutely urgent (e.g. \"I'm having chest pain right now\"), stop the intake flow immediately, clearly tell them to contact emergency services or their physician right away, and end the call — do not continue with consent or history capture.\n\nTRANSITION\nOnce consent is clearly confirmed, do not summarize or start asking history questions yourself. Transfer immediately to the Personal History agent so the patient is not asked to repeat themselves.\n\nPRIVACY\nNever ask for or record insurance, payment, or financial information in this stage.",
+        "llm": "gpt-5.4-mini",
+        "reasoning_effort": "low",
+        "temperature": 0.0,
+        "max_tokens": -1,
+        "tool_ids": [],
+        "tools": [],
+        "built_in_tools": {
+          "end_call": {
+            "type": "system",
+            "name": "end_call",
+            "description": "Call this if the patient declines consent, or explicitly wants to stop before consenting. Use a polite closing (\"No problem — you can pick this up again anytime. Take care.\") then end the call.",
+            "response_timeout_secs": 20,
+            "disable_interruptions": false,
+            "interruption_mode": "allow",
+            "params": { "system_tool_type": "end_call" }
+          },
+          "transfer_to_agent": {
+            "type": "system",
+            "name": "transfer_to_agent",
+            "description": "Transfer to the Personal History agent once the patient has given explicit verbal consent to proceed. Do not transfer before consent is confirmed.",
+            "response_timeout_secs": 10,
+            "disable_interruptions": true,
+            "params": {
+              "system_tool_type": "transfer_to_agent",
+              "transfers": [
+                {
+                  "agent_id": "agent_4801m063yf0bfpqszyjhrhp275gq",
+                  "condition": "Patient has given clear, explicit verbal consent to be recorded and to proceed with the health history conversation.",
+                  "delay_ms": 0,
+                  "enable_transferred_agent_first_message": false,
+                  "transfer_message": ""
+                }
+              ]
+            }
+          },
+          "voicemail_detection": null,
+          "language_detection": null,
+          "transfer_to_number": null,
+          "skip_turn": null,
+          "play_keypad_touch_tone": null
+        }
+      }
+    }
+  },
+  "metadata": {
+    "created_at_unix_secs": 1786843642,
+    "updated_at_unix_secs": 1786944000,
+    "notes": "LIVE on the Bond sandbox ElevenLabs account as of 2026-08-16 (agent_id above, v2 — recreated once to re-point transfer_to_agent at the recreated 02). transfer_to_agent wired to 02's real agent_id. See README.md 'Platform quirks discovered' section for the tools+built_in_tools bug that forced 01/02/03 to be recreated from scratch (v1 agent_ids are gone). Same day, later: tts.model_id switched to eleven_v3_conversational with tts.expressive_mode=true (Expressive Mode, per ElevenLabs docs), and llm switched from gpt-5-mini to gpt-5.4-mini. temperature dropped from 0.2 to 0.0 because gpt-5.4-mini requires temperature=0 whenever reasoning_effort != none (verified via a direct PATCH probe against the live agent, which returned that exact validation_error before the fix). Applied via a live-account PATCH round-trip (GET -> modify tts/llm/temperature only -> PATCH); tool_ids/transfer_to_agent/end_call all confirmed unchanged in the response."
+  }
+}

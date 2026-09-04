@@ -1,0 +1,61 @@
+{
+  "_comment": "Standalone Tool resource (POST /v1/convai/tools, body: {\"tool_config\": <this object minus this comment>}). Referenced by 03_daphne_family_history.create.json via tool_ids, NOT inlined in prompt.tools -- see that file's metadata.notes for why. Live tool_id: tool_1701m063xzjfe42be1327ddntmmv.",
+  "type": "webhook",
+  "name": "log_health_fact",
+  "description": "Log a single structured family health fact the patient just stated. Call this immediately after the patient states a discrete fact about a relative, one call per fact.",
+  "response_timeout_secs": 5,
+  "disable_interruptions": true,
+  "force_pre_tool_speech": false,
+  "pre_tool_speech": "off",
+  "assignments": [],
+  "api_schema": {
+    "url": "https://api.bondhealth.example/v1/conversations/{conversation_session_id}/health-facts",
+    "method": "POST",
+    "path_params_schema": {
+      "conversation_session_id": {
+        "type": "string",
+        "constant_value": "demo-session-001"
+      }
+    },
+    "request_headers": {
+      "Authorization": "Bearer {{bond_internal_api_token}}",
+      "Content-Type": "application/json"
+    },
+    "request_body_schema": {
+      "type": "object",
+      "required": ["person", "category", "description"],
+      "properties": {
+        "person": {
+          "type": "string",
+          "description": "The family relation, e.g. 'mother', 'father', 'sibling', 'maternal_grandmother'. Never 'self' in this stage."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["family_history"],
+          "description": "Always 'family_history' in this stage."
+        },
+        "subcategory": {
+          "type": "string",
+          "description": "e.g. 'cancer:breast', 'diabetes:type2', 'cardiac:heart_attack', 'cardiac:hypertension'"
+        },
+        "description": {
+          "type": "string",
+          "description": "Normalized description of the condition/event, e.g. 'breast cancer', 'heart attack', 'rheumatoid arthritis'."
+        },
+        "approx_age": {
+          "type": "integer",
+          "description": "Relative's approximate age at diagnosis, if known. Omit if unknown."
+        },
+        "still_living": {
+          "type": "boolean",
+          "description": "Whether the relative is still living, if mentioned. Omit if not mentioned."
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "description": "How precise/certain the patient's statement was."
+        }
+      }
+    }
+  }
+}

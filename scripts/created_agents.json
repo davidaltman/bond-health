@@ -1,0 +1,13 @@
+{
+  "summary": "agent_6701m03g2y3yf3tt960cbzn3nwjt",
+  "family_history": "agent_0801m063ye0zf0985f1efqmgg90f",
+  "family_mother": "agent_2401m0703zj6fjdb9xy2ezpkz1t9",
+  "family_father": "agent_7701m0703y9ge1rt5yv6gsfs39zm",
+  "family_siblings": "agent_1801m0703x8vecqsegjxr8hdqz3c",
+  "family_grandparents": "agent_4401m0703w8dep7974pkcm4f38et",
+  "personal_history": "agent_4801m063yf0bfpqszyjhrhp275gq",
+  "intake_consent": "agent_4201m063yfvqfjj8pm933nkfdywb",
+  "personal_history_tool_id": "tool_8801m063xzbyftw9zmttz5d3b162",
+  "family_history_tool_id": "tool_1701m063xzjfe42be1327ddntmmv",
+  "_note": "v2 ids as of 2026-08-16. v1 ids (created 2026-08-15) were deleted after discovering the tools+built_in_tools platform bug -- see README.md 'Platform quirks discovered'. As of 2026-08-16 later the same day, personal_history and family_history no longer reference their tool_id in tool_ids -- log_health_fact was stubbed (no real backend, was causing latency spikes + duplicate questions, see README.md 'Fixes applied 2026-08-16'). The tool_ids above stay registered on the account for later use but are unused. 2026-08-16, later still: family_history was briefly RETIRED and replaced by 4 separate per-relative agents (family_mother -> family_father -> family_siblings -> family_grandparents) after it short-circuited (transferred to Summary after asking about mother only). 2026-08-16, reverted the same day: the 4-agent split introduced a NEW failure mode in a live call (Father agent immediately re-transferred without asking its own question) plus noticeably worse latency, so family_history was REINSTATED as personal_history's live transfer_to_agent target. The 4 split agents remain live and registered (not deleted) and are individually selectable from the frontend picker for testing, but are no longer auto-chained. See 03_daphne_family_history.create.json's notes for the full incident history."
+}

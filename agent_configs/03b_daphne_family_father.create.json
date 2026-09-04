@@ -1,0 +1,107 @@
+{
+  "agent_id": "agent_7701m0703y9ge1rt5yv6gsfs39zm",
+  "name": "Bond-Daphne-FamilyFather-v1",
+  "conversation_config": {
+    "asr": {
+      "quality": "high",
+      "provider": "scribe_realtime",
+      "user_input_audio_format": "pcm_16000",
+      "keywords": []
+    },
+    "turn": {
+      "turn_timeout": 8.0,
+      "silence_end_call_timeout": 15.0,
+      "mode": "turn",
+      "turn_eagerness": "patient",
+      "turn_model": "turn_v3"
+    },
+    "tts": {
+      "model_id": "eleven_v3_conversational",
+      "voice_id": "hpp4J3VqNfWAUOO0d1Us",
+      "expressive_mode": true,
+      "agent_output_audio_format": "pcm_16000",
+      "optimize_streaming_latency": 3,
+      "stability": 0.6,
+      "speed": 1.0,
+      "similarity_boost": 0.85
+    },
+    "conversation": {
+      "text_only": false,
+      "max_duration_seconds": 900,
+      "client_events": [
+        "audio",
+        "interruption",
+        "user_transcript",
+        "agent_response",
+        "agent_response_correction",
+        "agent_response_metadata"
+      ]
+    },
+    "vad": { "background_voice_detection": true },
+    "agent": {
+      "first_message": "",
+      "language": "en",
+      "dynamic_variables": {
+        "dynamic_variable_placeholders": {
+          "patient_first_name": "Jordan",
+          "patient_id": "demo-patient-001",
+          "agent_name": "Daphne",
+          "conversation_session_id": "demo-session-001",
+          "bond_internal_api_token": "<injected-per-call-short-lived-token>"
+        }
+      },
+      "prompt": {
+        "prompt": "IDENTITY\nYou are Daphne, continuing {{patient_first_name}}'s family health history. This stage covers ONLY {{patient_first_name}}'s FATHER -- siblings and grandparents are each covered in their own stage right after this one, and mother was already covered in the previous stage, so do not re-ask about her, and do not re-ask about {{patient_first_name}}'s own personal history.\n\nGOAL OF THIS STAGE\nAsk a single natural, open question about {{patient_first_name}}'s father's health history. Cover the core hereditary-relevant categories if the patient doesn't volunteer them: cancer (type, approximate age at diagnosis), diabetes (type if known), cardiovascular disease (heart attack, stroke, high blood pressure), and any other significant hereditary condition. Ask conversationally rather than reading a checklist verbatim -- e.g. \"What about your father -- any major health conditions there, like cancer, diabetes, or heart problems?\" Follow up naturally on anything vague, at most one or two follow-ups.\n\nMANDATORY TRANSITION -- DO NOT SKIP THIS\nOnce the patient has responded to your question about their father -- whether that's a detailed answer, \"nothing that I know of,\" or a serious finding like a cancer diagnosis -- you MUST call transfer_to_agent to move to the Siblings stage. A serious or emotional finding is NEVER a reason to linger, recap, summarize, or end the call early, and it is NEVER a reason to skip transferring. Do not ask about siblings or grandparents yourself in this stage -- that happens automatically once you transfer.\n\nEARLY EXIT\nIf the patient explicitly says they want to stop discussing family history altogether (e.g. \"let's skip the rest\" or \"I don't want to talk about my family's health\") -- not just skip talking about their father specifically -- transfer directly to the Summary agent instead of the Siblings stage.\n\nCAPTURING FACTS\nThere is no live logging tool in this stage -- do not attempt to call any tool for facts, and never say anything about \"logging\" or \"saving\" what the patient tells you. Facts are captured afterward from this conversation's transcript.\n\nURGENT/SAFETY OVERRIDE\nIf the patient pivots to describing something acutely concerning about themselves right now, pause this flow, tell them clearly to contact emergency services or their physician right away, and end the call.",
+        "llm": "gpt-5-mini",
+        "reasoning_effort": "low",
+        "temperature": 0.2,
+        "max_tokens": -1,
+        "tool_ids": [],
+        "tools": [],
+        "built_in_tools": {
+          "end_call": {
+            "type": "system",
+            "name": "end_call",
+            "description": "Call this if the patient needs to stop before the conversation is naturally complete.",
+            "response_timeout_secs": 20,
+            "params": { "system_tool_type": "end_call" }
+          },
+          "transfer_to_agent": {
+            "type": "system",
+            "name": "transfer_to_agent",
+            "description": "Transfer to the Siblings stage once you've asked about the patient's father and they've responded (any answer counts, including 'I don't know' or a serious diagnosis). Only transfer directly to Summary instead if the patient explicitly wants to stop discussing family history altogether.",
+            "response_timeout_secs": 10,
+            "disable_interruptions": true,
+            "params": {
+              "system_tool_type": "transfer_to_agent",
+              "transfers": [
+                {
+                  "agent_id": "{{next_relative_agent_id}}",
+                  "condition": "You've asked about the patient's father's health history and the patient has responded -- any answer counts, including 'nothing' / 'I don't know' / a serious diagnosis. This is the default path after every response about the father.",
+                  "delay_ms": 0,
+                  "enable_transferred_agent_first_message": false,
+                  "transfer_message": ""
+                },
+                {
+                  "agent_id": "agent_6701m03g2y3yf3tt960cbzn3nwjt",
+                  "condition": "The patient explicitly says they want to stop discussing family history altogether (not just skip talking about their father specifically) -- e.g. 'let's skip the rest' or 'I don't want to talk about my family's health.'",
+                  "delay_ms": 0,
+                  "enable_transferred_agent_first_message": false,
+                  "transfer_message": ""
+                }
+              ]
+            }
+          },
+          "voicemail_detection": null,
+          "language_detection": null,
+          "transfer_to_number": null,
+          "skip_turn": null,
+          "play_keypad_touch_tone": null
+        }
+      }
+    }
+  },
+  "metadata": {
+    "notes": "NEW 2026-08-16: second of 4 per-relative stages (mother -> father -> siblings -> grandparents) that REPLACE the single monolithic 03_daphne_family_history agent -- see 03a_daphne_family_mother.create.json's notes for the full rationale. transfer_to_agent has two targets: normal path -> Siblings stage, early-exit path -> Summary (only if patient explicitly wants to stop ALL remaining family history, not just skip father)."
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "health_events": [
+    {
+      "person": "self",
+      "category": "surgery",
+      "subcategory": null,
+      "description": "Concussion, treated in hospital",
+      "approx_age": 3,
+      "still_living": null,
+      "confidence": "high",
+      "source_quote": "I've had a concussion when I was three years old. Um, I was treated in the hospital, and I think nothing came of it.",
+      "conflict_with_logged_fact": false,
+      "conflict_note": null
+    },
+    {
+      "person": "self",
+      "category": "surgery",
+      "subcategory": null,
+      "description": "Broken arm",
+      "approx_age": 10,
+      "still_living": null,
+      "confidence": "high",
+      "source_quote": "I broke my arm. My arm, I broke when I was 10.",
+      "conflict_with_logged_fact": false,
+      "conflict_note": null
+    },
+    {
+      "person": "self",
+      "category": "surgery",
+      "subcategory": null,
+      "description": "Fractured rib",
+      "approx_age": null,
+      "still_living": null,
+      "confidence": "medium",
+      "source_quote": "I broke a rib. Um, My arm, I broke when I was 10. Uh, fractured rib, I don't remember when.",
+      "conflict_with_logged_fact": false,
+      "conflict_note": null
+    },
+    {
+      "person": "self",
+      "category": "surgery",
+      "subcategory": null,
+      "description": "Colonoscopy",
+      "approx_age": 49,
+      "still_living": null,
+      "confidence": "high",
+      "source_quote": "I've had a colonoscopy, uh, when I was 49",
+      "conflict_with_logged_fact": false,
+      "conflict_note": null
+    },
+    {
+      "person": "self",
+      "category": "surgery",
+      "subcategory": null,
+      "description": "Hernia repair via robotic surgery with three incisions",
+      "approx_age": 52,
+      "still_living": null,
+      "confidence": "high",
+      "source_quote": "I had a hernia repair, uh, via robot, three incisions, when I was 52.",
+      "conflict_with_logged_fact": false,
+      "conflict_note": null
+    },
+    {
+      "person": "self",
+      "category": "medication",
+      "subcategory": null,
+      "description": "Finasteride 2.5 milligrams daily",
+      "approx_age": null,
+      "still_living": null,
+      "confidence": "high",
+      "source_quote": "I'm taking, uh, finasteride, uh, 2.5 milligrams",
+      "conflict_with_logged_fact": false,
+      "conflict_note": null
+    },
+    {
+      "person": "self",
+      "category": "medication",
+      "subcategory": null,
+      "description": "Terbinafine daily, dose uncertain",
+      "approx_age": null,
+      "still_living": null,
+      "confidence": "high",
+      "source_quote": "I'm taking also terbinafine, uh, I'm not sure of the dose, um, daily.",
+      "conflict_with_logged_fact": false,
+      "conflict_note": null
+    },
+    {
+      "person": "mother",
+      "category": "condition",
+      "subcategory": null,
+      "description": "Leukemia, stage four, treated with chemotherapy for six months, now clear for last two scans",
+      "approx_age": 83,
+      "still_living": true,
+      "confidence": "high",
+      "source_quote": "My mom, uh, when she was 83, uh, just two years ago, um, had leukemia, stage four, and she was, uh, treated for it, um, had chemotherapy, uh, treated for six months, and now she has been clear for the last two scans that she had.",
+      "conflict_with_logged_fact": false,
+      "conflict_note": null
+    },
+    {
+      "person": "father",
+      "category": "condition",
+      "subcategory": null,
+      "description": "No major health conditions reported",
+      "approx_age": null,
+      "still_living": null,
+      "confidence": "high",
+      "source_quote": "Let's move on to siblings.",
+      "conflict_with_logged_fact": false,
+      "conflict_note": null
+    },
+    {
+      "person": "half sister",
+      "category": "condition",
+      "subcategory": null,
+      "description": "Healthy, no major health conditions reported",
+      "approx_age": 45,
+      "still_living": true,
+      "confidence": "high",
+      "source_quote": "Yeah, she's still living. She is 45 years old. She's healthy as an ox.",
+      "conflict_with_logged_fact": false,
+      "conflict_note": null
+    }
+  ],
+  "session_summary": "Jordan provided a comprehensive personal health history including a childhood concussion at age 3 treated in hospital, a broken arm at age 10, a fractured rib of unknown age, a colonoscopy at age 49, and a robotic hernia repair with three incisions at age 52. Current medications include finasteride 2.5 mg daily and terbinafine daily (dose to be confirmed). Jordan denies any chronic conditions such as diabetes, high blood pressure, or asthma. Family history includes: mother who had stage four leukemia at age 83 two years ago, treated with chemotherapy for six months and now clear on last two scans; father with no reported major health conditions; and one half sister, age 45, currently living and in good health. Patient confirmed all information was accurate."
+}

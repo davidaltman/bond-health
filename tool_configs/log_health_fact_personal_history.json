@@ -1,0 +1,53 @@
+{
+  "_comment": "Standalone Tool resource (POST /v1/convai/tools, body: {\"tool_config\": <this object minus this comment>}). Referenced by 02_daphne_personal_history.create.json via tool_ids, NOT inlined in prompt.tools -- see that file's metadata.notes for why. Live tool_id: tool_8801m063xzbyftw9zmttz5d3b162.",
+  "type": "webhook",
+  "name": "log_health_fact",
+  "description": "Log a single structured health fact the patient just stated — a surgery, medication, chronic condition, or symptom about themselves. Call this immediately after the patient states a discrete fact, one call per fact, not in a batch at the end of the conversation.",
+  "response_timeout_secs": 5,
+  "disable_interruptions": true,
+  "force_pre_tool_speech": false,
+  "pre_tool_speech": "off",
+  "assignments": [],
+  "api_schema": {
+    "url": "https://api.bondhealth.example/v1/conversations/{conversation_session_id}/health-facts",
+    "method": "POST",
+    "path_params_schema": {
+      "conversation_session_id": {
+        "type": "string",
+        "constant_value": "demo-session-001"
+      }
+    },
+    "request_headers": {
+      "Authorization": "Bearer {{bond_internal_api_token}}",
+      "Content-Type": "application/json"
+    },
+    "request_body_schema": {
+      "type": "object",
+      "required": ["person", "category", "description"],
+      "properties": {
+        "person": {
+          "type": "string",
+          "description": "Always 'self' in this stage — personal history only."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["surgery", "medication", "condition", "symptom"],
+          "description": "The type of personal health fact being logged."
+        },
+        "description": {
+          "type": "string",
+          "description": "Normalized description, e.g. 'appendectomy', 'lisinopril 10mg daily', 'type 2 diabetes'"
+        },
+        "approx_age": {
+          "type": "integer",
+          "description": "Patient's approximate age at the event, if known. Omit if unknown."
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "description": "How precise/certain the patient's statement was."
+        }
+      }
+    }
+  }
+}

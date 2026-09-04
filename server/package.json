@@ -1,0 +1,24 @@
+{
+  "name": "bond-health-demo-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal local backend for the Bond Health / Daphne demo frontend: proxies ElevenLabs signed-url auth (keeps the sandbox API key server-side) and runs the post-call Bedrock timeline extraction.",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1111.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "agent_id": "agent_4801m063yf0bfpqszyjhrhp275gq",
+  "name": "Bond-Daphne-PersonalHistory-v1",
+  "conversation_config": {
+    "asr": {
+      "quality": "high",
+      "provider": "scribe_realtime",
+      "user_input_audio_format": "pcm_16000",
+      "keywords": []
+    },
+    "turn": {
+      "turn_timeout": 8.0,
+      "silence_end_call_timeout": 15.0,
+      "mode": "turn",
+      "turn_eagerness": "patient",
+      "turn_model": "turn_v3"
+    },
+    "tts": {
+      "model_id": "eleven_v3_conversational",
+      "voice_id": "hpp4J3VqNfWAUOO0d1Us",
+      "expressive_mode": true,
+      "agent_output_audio_format": "pcm_16000",
+      "optimize_streaming_latency": 3,
+      "stability": 0.6,
+      "speed": 1.0,
+      "similarity_boost": 0.85
+    },
+    "conversation": {
+      "text_only": false,
+      "max_duration_seconds": 1800,
+      "client_events": [
+        "audio",
+        "interruption",
+        "user_transcript",
+        "agent_response",
+        "agent_response_correction",
+        "agent_response_metadata"
+      ]
+    },
+    "vad": { "background_voice_detection": true },
+    "agent": {
+      "first_message": "",
+      "language": "en",
+      "dynamic_variables": {
+        "dynamic_variable_placeholders": {
+          "patient_first_name": "Jordan",
+          "patient_id": "demo-patient-001",
+          "agent_name": "Daphne",
+          "conversation_session_id": "demo-session-001",
+          "bond_internal_api_token": "<injected-per-call-short-lived-token>"
+        }
+      },
+      "prompt": {
+        "prompt": "IDENTITY\nYou are Daphne, continuing the health history conversation with {{patient_first_name}}. Consent has already been given in the previous stage — do not ask for it again, and do not reintroduce yourself.\n\nGOAL OF THIS STAGE\nCapture {{patient_first_name}}'s personal health history across four categories. Ask about one category at a time, in this order, and don't move to the next until the current one feels reasonably complete:\n1. Major surgeries or hospitalizations (what, approximately when/age)\n2. Current medications (name, and approximate dose/frequency if known)\n3. Chronic or ongoing health conditions\n4. Any other major health events (injuries, diagnoses, significant symptoms — past or present)\n\nHOW TO ASK\nAsk open, conversational questions (\"Have you had any surgeries or been hospitalized for anything?\") rather than reading a rigid checklist verbatim. Follow up naturally for approximate timing or age when it's missing (\"About how old were you?\").\n\nCAPTURING FACTS\nThere is no live logging tool in this stage right now — do not attempt to call any tool for facts, and never say anything about \"logging\" or \"saving\" what the patient tells you. Facts are captured afterward from this conversation's transcript, not in real time. Just focus on naturally drawing out clear, complete answers for each category, and once you've asked about something, move on — do not circle back and re-ask a question you already asked in this conversation.\n\nHANDLING VAGUE OR PARTIAL ANSWERS\nIf the patient is vague (\"some pills for blood pressure\"), accept it and move on rather than pressing repeatedly for precision — a physician reviews anything unclear later. Ask at most one clarifying follow-up per item.\n\nSENSITIVE OR CONCERNING ITEMS\nIf something the patient mentions sounds like it could need prompt medical attention, acknowledge it warmly and move on naturally. Do not diagnose, speculate, or alarm the patient — a downstream review process, not you, decides whether this needs a referral.\n\nURGENT/SAFETY OVERRIDE\nIf the patient describes something acutely urgent happening right now, stop this flow immediately, tell them clearly to contact emergency services or their physician right away, and end the call.\n\nTRANSITION\nOnce all four categories have been reasonably covered — or the patient clearly has nothing more to add — tell them you'll now ask a few questions about their family's health, then transfer to the Family History agent.",
+        "llm": "gpt-5.4-mini",
+        "reasoning_effort": "low",
+        "temperature": 0.0,
+        "max_tokens": -1,
+        "tool_ids": [],
+        "tools": [],
+        "built_in_tools": {
+          "end_call": {
+            "type": "system",
+            "name": "end_call",
+            "description": "Call this if the patient needs to stop the conversation before it's naturally complete (e.g. has to go, or describes an urgent safety issue after which you've already told them to seek emergency care).",
+            "response_timeout_secs": 20,
+            "params": { "system_tool_type": "end_call" }
+          },
+          "transfer_to_agent": {
+            "type": "system",
+            "name": "transfer_to_agent",
+            "description": "Transfer to the Family History agent once the four personal-history categories have been reasonably covered.",
+            "response_timeout_secs": 10,
+            "disable_interruptions": true,
+            "params": {
+              "system_tool_type": "transfer_to_agent",
+              "transfers": [
+                {
+                  "agent_id": "agent_0801m063ye0zf0985f1efqmgg90f",
+                  "condition": "Personal history categories (surgeries, medications, chronic conditions, and other major health events) have been reasonably covered, or the patient has clearly indicated they have nothing further to add.",
+                  "delay_ms": 0,
+                  "enable_transferred_agent_first_message": false,
+                  "transfer_message": ""
+                }
+              ]
+            }
+          },
+          "voicemail_detection": null,
+          "language_detection": null,
+          "transfer_to_number": null,
+          "skip_turn": null,
+          "play_keypad_touch_tone": null
+        }
+      }
+    }
+  },
+  "metadata": {
+    "created_at_unix_secs": 1786843642,
+    "updated_at_unix_secs": 1786947000,
+    "notes": "`first_message` is intentionally empty — this agent receives an already-in-progress conversation via transfer_to_agent from 01_daphne_intake_consent, so it should not re-greet. `bond_internal_api_token` should be a short-lived, per-call token injected as a dynamic variable at call start, not a long-lived secret embedded in the agent config itself. LIVE on the Bond sandbox ElevenLabs account as of 2026-08-16 (agent_id above, v2). `log_health_fact` is STUBBED — tool_ids is empty and the prompt no longer instructs Daphne to call it. Root cause, confirmed from a real sandbox test call transcript (conv_7001m0649qxqftvbtzvxnns81nk0): there is no real backend behind `https://api.bondhealth.example/...`, so every call returned HTTP 500. With `tool_error_handling_mode: auto` the LLM saw each failure, sometimes retried 1-2x, and after settling emitted an extra spoken turn with no new user input to react to — producing both ~15s dead-air spikes (3 serialized failed-tool round trips before Daphne could speak) and duplicate/near-duplicate questions (e.g. asking about the father's health twice in a row, 3s apart, at t=283s and t=286s in that transcript). The standalone Tool resource (tool_configs/log_health_fact_personal_history.json, tool_id tool_8801m063xzbyftw9zmttz5d3b162) is left registered on the account as a stub/reference for when a real backend exists, but is not referenced by any agent's tool_ids. See README.md 'Platform quirks discovered' for the earlier (separate) tools+built_in_tools bug that led to the tool_ids-over-inline-tools pattern in the first place. Same day, later: tts.model_id switched to eleven_v3_conversational with tts.expressive_mode=true (Expressive Mode), and llm switched from gpt-5-mini to gpt-5.4-mini. temperature dropped from 0.2 to 0.0 because gpt-5.4-mini requires temperature=0 whenever reasoning_effort != none. Applied via a live-account PATCH round-trip (GET -> modify tts/llm/temperature only -> PATCH); tool_ids (empty, as above) and built_in_tools/transfer_to_agent confirmed unchanged in the response. 2026-08-16, later still: transfer_to_agent target briefly repointed from 03_daphne_family_history to the new first per-relative stage, 03a_daphne_family_mother (agent_2401m0703zj6fjdb9xy2ezpkz1t9) -- see that file's notes for why the monolithic agent was temporarily replaced by 4 separate per-relative agents. 2026-08-16, reverted the same day: a live test call (conv_5001m070d1yxe0fbfc239tc4wna9) showed a NEW failure mode with the 4-agent split -- the Father agent, immediately upon being transferred into, called transfer_to_agent again without ever asking its own question, apparently misjudging the patient's prior answer (about the mother, meant for the previous agent) as already satisfying its own transfer condition. Combined with noticeably added latency per extra transfer hop, reverted transfer_to_agent target back to the monolithic 03_daphne_family_history (agent_0801m063ye0zf0985f1efqmgg90f) as the live default. The 4 per-relative agents (03a-03d) are kept live and registered on the account, selectable individually from the frontend's agent picker for testing, but are no longer auto-chained from 02."
+  }
+}

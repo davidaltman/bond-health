@@ -1,0 +1,102 @@
+{
+  "agent_id": "agent_0801m063ye0zf0985f1efqmgg90f",
+  "name": "Bond-Daphne-FamilyHistory-v1",
+  "conversation_config": {
+    "asr": {
+      "quality": "high",
+      "provider": "scribe_realtime",
+      "user_input_audio_format": "pcm_16000",
+      "keywords": []
+    },
+    "turn": {
+      "turn_timeout": 8.0,
+      "silence_end_call_timeout": 15.0,
+      "mode": "turn",
+      "turn_eagerness": "patient",
+      "turn_model": "turn_v3"
+    },
+    "tts": {
+      "model_id": "eleven_v3_conversational",
+      "voice_id": "hpp4J3VqNfWAUOO0d1Us",
+      "expressive_mode": true,
+      "agent_output_audio_format": "pcm_16000",
+      "optimize_streaming_latency": 3,
+      "stability": 0.6,
+      "speed": 1.0,
+      "similarity_boost": 0.85
+    },
+    "conversation": {
+      "text_only": false,
+      "max_duration_seconds": 1800,
+      "client_events": [
+        "audio",
+        "interruption",
+        "user_transcript",
+        "agent_response",
+        "agent_response_correction",
+        "agent_response_metadata"
+      ]
+    },
+    "vad": { "background_voice_detection": true },
+    "agent": {
+      "first_message": "",
+      "language": "en",
+      "dynamic_variables": {
+        "dynamic_variable_placeholders": {
+          "patient_first_name": "Jordan",
+          "patient_id": "demo-patient-001",
+          "agent_name": "Daphne",
+          "conversation_session_id": "demo-session-001",
+          "bond_internal_api_token": "<injected-per-call-short-lived-token>"
+        }
+      },
+      "prompt": {
+        "prompt": "IDENTITY\nYou are Daphne, continuing with {{patient_first_name}}'s family health history. Personal history has already been captured in the previous stage — do not re-ask about {{patient_first_name}}'s own history here.\n\nGOAL OF THIS STAGE\nAsk about relatives in this exact order: (1) mother, (2) father, (3) each sibling individually, (4) maternal grandparents individually — maternal grandmother, then maternal grandfather ONLY. Paternal grandparents (father's parents) are OUT OF SCOPE for this stage — never ask about them. For each relative, ask about the core hereditary-relevant condition categories:\n- Cancer (type, which relative, approximate age at diagnosis if known)\n- Diabetes (type if known)\n- Cardiovascular disease (heart attack, stroke, high blood pressure)\n- Any other significant hereditary condition the patient volunteers\n\nRELATIVE CHECKLIST — EVERY ITEM MUST BE ASKED ABOUT INDIVIDUALLY BEFORE transfer_to_agent\nThis is NOT just \"4 categories\" — each individual relative within a category must be covered on its own, not lumped together as a group:\n1. Mother\n2. Father\n3. EACH sibling the patient has, one at a time (if the patient says they have no siblings, this item is satisfied — nothing further to ask)\n4. EACH of the TWO maternal grandparents individually — maternal grandmother, maternal grandfather ONLY (if the patient doesn't know a particular grandparent's history, that still counts as \"asked\" once you've raised that specific grandparent and the patient has responded — e.g. \"I don't know\" satisfies that item; you must still raise both). Paternal grandparents (father's parents) are OUT OF SCOPE for this stage — do NOT ask about them under any circumstances.\nYou may NOT call transfer_to_agent until every item above has been individually asked about — or the patient explicitly says they want to stop covering family history altogether.\n\nFORBIDDEN ACTIONS\n- Calling transfer_to_agent after asking about only mother (or only mother + father). A serious finding like leukemia for one relative is NEVER sufficient to transfer.\n- Asking one blanket question like \"any health issues among your grandparents?\" and treating that as covering both — you must raise each of the two maternal grandparents by name/role (maternal grandmother, maternal grandfather) individually, even if that means two short back-to-back questions.\n- Asking about paternal grandparents (father's parents) at all — they are OUT OF SCOPE for this stage, not just lower priority.\n- Asking one blanket question about \"your siblings\" and stopping after the first one answers, if the patient has more than one sibling — you must ask about each sibling individually (by name or by \"do you have any other siblings besides [name]?\") until none remain uncovered.\n- Summarizing, recapping, or previewing what was discussed — the Summary agent does that next.\n- Re-asking about {{patient_first_name}}'s own personal history.\n\nHOW TO ASK\nGo relative by relative, not category by category (\"Let's start with your mother — any major health conditions there? Cancer, diabetes, heart problems?\") — this tends to surface more complete answers than asking \"has anyone in your family had cancer?\" cold. For siblings: first ask how many siblings the patient has, then ask about each one individually by name/birth order (\"Let's start with your oldest sibling — any major health conditions there?\", then move to the next). For grandparents: ask ONLY about the two maternal grandparents, each individually and explicitly (\"Let's start with your mother's mother — any major health conditions there?\", then \"and your mother's father?\") rather than one combined question — if the patient says they never knew or don't have information on a particular grandparent, accept that as the answer for that grandparent and move to the next one. Do not ask about your father's parents (paternal grandparents) — they are out of scope for this stage.\n\nAFTER EACH RELATIVE ANSWERS\nMove directly to the NEXT uncovered relative in the list — the next sibling if any remain, otherwise the first grandparent; the next grandparent if any remain, otherwise transfer. Do not call transfer_to_agent, summarize, or recap until every relative on the checklist has been individually asked about.\n\nIf the patient adds information about a relative you already asked about (e.g. \"wait, my mother also has asthma\"), acknowledge it briefly and then ask about the next uncovered relative — do not transfer and do not recap.\n\nThe ONLY exceptions to asking about every individual relative: (a) the patient explicitly says something like \"let's stop here\" / \"that's everyone\" / \"I don't want to discuss the rest,\" which ends coverage of ALL remaining relatives (not just the current one), or (b) the patient clearly doesn't know a given relative's history — acknowledge briefly and move to the next uncovered relative (this still counts as that one relative being \"asked about\"; it does not excuse skipping any of the OTHER still-uncovered relatives).\n\nCAPTURING FACTS\nThere is no live logging tool in this stage right now — do not attempt to call any tool for facts, and never say anything about \"logging\" or \"saving\" what the patient tells you. Facts are captured afterward from this conversation's transcript, not in real time.\n\nURGENT/SAFETY OVERRIDE\nFamily history is rarely urgent, but if the patient pivots to describing something acutely concerning about themselves right now, pause this flow, tell them clearly to contact emergency services or their physician right away, and end the call.\n\nTRANSITION\nOnly once you've individually asked about mother, father, every sibling, and both maternal grandparents (maternal grandmother, maternal grandfather) — or the patient has explicitly said they want to stop before you get through everyone — thank them briefly in one short sentence and transfer to the Summary agent. Do NOT preview, summarize, or recap what was discussed.",
+        "llm": "gpt-5.4-mini",
+        "reasoning_effort": "medium",
+        "temperature": 0.0,
+        "max_tokens": -1,
+        "tool_ids": [],
+        "tools": [],
+        "built_in_tools": {
+          "end_call": {
+            "type": "system",
+            "name": "end_call",
+            "description": "Call this if the patient needs to stop before the conversation is naturally complete.",
+            "response_timeout_secs": 20,
+            "params": { "system_tool_type": "end_call" }
+          },
+          "transfer_to_agent": {
+            "type": "system",
+            "name": "transfer_to_agent",
+            "description": "FORBIDDEN until you have individually asked about mother AND father AND EACH sibling AND EACH of the two maternal grandparents (maternal grandmother, maternal grandfather) — or the patient explicitly asked to stop all remaining family history. Paternal grandparents are OUT OF SCOPE and must never be asked about. Never call this after only asking about mother, or after one blanket 'grandparents' or 'siblings' question — even if a relative had a serious diagnosis like leukemia.",
+            "response_timeout_secs": 10,
+            "disable_interruptions": true,
+            "params": {
+              "system_tool_type": "transfer_to_agent",
+              "transfers": [
+                {
+                  "agent_id": "agent_6701m03g2y3yf3tt960cbzn3nwjt",
+                  "condition": "FORBIDDEN if only mother has been asked about, or if grandparents/siblings were only asked about as a single blanket question rather than individually. You must have individually asked about mother AND father AND every sibling the patient has AND both maternal grandparents (maternal grandmother, maternal grandfather) before calling this tool — 'I don't know' for a specific relative satisfies that one item but does not excuse skipping the others. Paternal grandparents are OUT OF SCOPE for this stage and must never be asked about. A serious finding for one relative is never sufficient. The only early exit is the patient explicitly saying they want to stop covering ALL remaining family history.",
+                  "delay_ms": 0,
+                  "enable_transferred_agent_first_message": false,
+                  "transfer_message": ""
+                }
+              ]
+            }
+          },
+          "voicemail_detection": null,
+          "language_detection": null,
+          "transfer_to_number": null,
+          "skip_turn": null,
+          "play_keypad_touch_tone": null
+        }
+      }
+    }
+  },
+  "metadata": {
+    "created_at_unix_secs": 1786843642,
+    "updated_at_unix_secs": 1786947600,
+    "notes": "Same empty-first_message pattern as the personal-history agent — this stage is reached only via transfer from 02_daphne_personal_history. LIVE on the Bond sandbox ElevenLabs account as of 2026-08-16 (agent_id above, v2). transfer_to_agent wired to 04's real agent_id (unchanged). `log_health_fact` is STUBBED — tool_ids is empty and the prompt no longer calls it; see 02's notes for the root-cause analysis (dead webhook -> failed tool retries -> both latency spikes and duplicated questions, confirmed from a real transcript). The standalone Tool resource (tool_configs/log_health_fact_family_history.json, tool_id tool_1701m063xzjfe42be1327ddntmmv) stays registered as a stub for later, unused. Also fixed here: the TRANSITION instruction previously told this agent to preview a recap (\"I'm going to quickly recap...\") right before transferring to 04, which then delivered its own near-identical recap-intro sentence immediately after — an exact/near-exact duplicate spoken twice back to back across the handoff, also confirmed in the same transcript (t=378s vs t=384s). This agent now just says a short one-line thank-you and transfers; 04 owns the recap framing entirely. Same day, later: tts.model_id switched to eleven_v3_conversational with tts.expressive_mode=true (Expressive Mode), and llm switched from gpt-5-mini to gpt-5.4-mini. temperature dropped from 0.2 to 0.0 because gpt-5.4-mini requires temperature=0 whenever reasoning_effort != none. Applied via a live-account PATCH round-trip (GET -> modify tts/llm/temperature only -> PATCH); tool_ids (empty, as above) and built_in_tools/transfer_to_agent confirmed unchanged in the response. Same day, later still: fixed a real family-history short-circuit bug found in conv_2401m06f5rc5edytdyyvpce0bqmt -- the agent asked about mother, got a leukemia finding, and transferred straight to Summary without ever asking about father, siblings, or grandparents (confirmed from the raw ElevenLabs transcript: turns 16-20, no father/sibling/grandparent questions at all). Root cause: both the TRANSITION instruction (\"a reasonable number of relatives have been covered\") and the transfer_to_agent condition (\"has been covered... across the core condition categories\") left it to gpt-5.4-mini's judgment what counted as enough, and a single notable finding (leukemia) was apparently judged sufficient to stop. Fixed by rewriting both the prompt (explicit MANDATORY COVERAGE section: must ask mother -> father -> siblings -> grandparents in order, a finding for one relative is never grounds to skip the rest, only an explicit patient request to stop covers all remaining relatives) and the transfer_to_agent condition text to match. Verified via the LLM-mode replay harness (run_elevenlabs_conversation_replay_multitenant.mjs --agent-id source --conversation-id conv_2401m06f5rc5edytdyyvpce0bqmt --customer-mode llm --replay-domain generic) replaying against the same source conversation post-patch: the agent now asks mother -> father -> siblings -> grandparents in order (turns 14-20), matching the intended flow; LLM judge scored 0.85/pass and explicitly noted the expanded father/sibling coverage was \"reasonable clinical scope expansion and not a regression.\" Applied via the same PATCH round-trip pattern as above; tool_ids/built_in_tools/transfer_to_agent target confirmed unchanged. TEMPORARILY ORPHANED then REINSTATED, both 2026-08-16: despite the fix above, this agent short-circuited AGAIN in a separate live call (conv_3101m06ya89yfx1vc523pewa7a5x) -- transferred to Summary after asking about mother only, and the Summary agent then improvised its own family-history questions (\"What about your father?\") instead of just recapping. Root cause hypothesis: asking one LLM to self-police a 4-item checklist across many turns is fundamentally non-deterministic. This agent was briefly RETIRED in favor of 4 separate per-relative agents (03a_daphne_family_mother -> 03b_daphne_family_father -> 03c_daphne_family_siblings -> 03d_daphne_family_grandparents). However, a live test call with that split (conv_5001m070d1yxe0fbfc239tc4wna9) surfaced a DIFFERENT failure mode: the Father agent, immediately on being transferred into, called transfer_to_agent again without ever asking its own question -- apparently misjudging the patient's prior answer (meant for the Mother agent) as already satisfying its own transfer condition. Splitting traded one nondeterministic failure mode for another, while also adding real per-hop latency the user directly noticed. Decision: REINSTATED this agent as the live default (02_daphne_personal_history's transfer_to_agent target repointed back here) since its hardened prompt (RELATIVE CHECKLIST / FORBIDDEN ACTIONS sections, see above) has not reproduced the original bug since being applied. The 4 per-relative agents (03a-03d) are kept live and registered on the account -- not deleted -- and remain individually selectable from the frontend's agent picker for testing/experimentation, but are no longer auto-chained from 02. If this monolithic agent's short-circuit bug resurfaces a third time, the per-relative split is still available as a fallback, ideally with an added fix for the transfer-in misjudgment bug (e.g. explicitly stating in each per-relative agent's prompt that a transferred-in agent must NEVER call transfer_to_agent as its very first action, must always speak first). 2026-08-16, later still: at the user's request, tightened the RELATIVE CHECKLIST from 4 categories (mother/father/siblings/grandparents) to individually-enumerated items -- mother, father, EACH sibling one at a time, and EACH of the four grandparents individually (maternal grandmother, maternal grandfather, paternal grandmother, paternal grandfather) -- since the previous prompt allowed a single blanket \"any grandparents with conditions?\" or \"any siblings with conditions?\" question to satisfy that whole category, which under-collects when a patient has e.g. 2 siblings or details differ across all 4 grandparents. transfer_to_agent's description/condition updated to match: forbidden if grandparents/siblings were only asked about as one blanket question rather than individually. Same change, LLM switched from gpt-5-mini to gpt-5.4-mini with reasoning_effort raised from low to medium (also at user's request) -- temperature kept at 0.0 since gpt-5.4-mini requires temperature=0 whenever reasoning_effort is not none, same constraint discovered earlier for the same model on other agents. Applied via patch_sandbox_agent.py; transfer_to_agent target confirmed unchanged in the diff. Verified via the LLM-mode replay harness against conv_5001m070d1yxe0fbfc239tc4wna9 (the call that previously had father skipped under the 4-agent split): the replayed call individually asked mother (turn 10), father (turn 12, not skipped this time), sister (turn 16), brother (turn 18, asked individually even though touched on in the sibling-count answer at turn 14-15), and started grandparents by name (maternal grandmother at turn 20) before the simulated customer disconnected after exhausting the reference facts it had to draw from (source conversation was only 17 turns; the more granular checklist correctly extended the replay to 21+ turns asking for more detail than the original short, buggy call ever reached). 2026-08-17, at user's request: narrowed the grandparents scope from all four grandparents to ONLY the two maternal grandparents (maternal grandmother, maternal grandfather) -- paternal grandparents (father's parents) are now explicitly OUT OF SCOPE across every section that previously enumerated all four (GOAL, RELATIVE CHECKLIST item 4, FORBIDDEN ACTIONS, HOW TO ASK, TRANSITION, and both the transfer_to_agent description and its condition text). This roughly halves the number of grandparent-related questions this stage asks and should shorten call duration; not yet re-verified against the replay harness after this change."
+  }
+}
