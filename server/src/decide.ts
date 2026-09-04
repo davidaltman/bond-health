@@ -24,6 +24,7 @@
  * speaks.
  */
 import type { ClinicalFact, ConversationSignals } from "./ledger.js";
+import type { SchedulingPreference } from "./preference.js";
 import {
   RED_FLAG_QUESTION,
   REQUIRED_SLOTS,
@@ -45,6 +46,7 @@ export type GateName =
   | "sufficiency"
   | "readiness"
   | "eligibility"
+  | "scheduling"
   | "already_resolved"
   | "stuck"
   | "act";
@@ -68,7 +70,7 @@ export interface Decision {
   gate: GateName;
   reason: string;
   /** For ASK: the one thing being asked for, and the authored wording. */
-  missingSlot: Slot | "red_flag_symptoms" | "readiness" | null;
+  missingSlot: Slot | "red_flag_symptoms" | "readiness" | "scheduling_preference" | null;
   say: string;
   /** Fact ids consulted, so a reviewer can see the basis rather than trust it. */
   evidence: string[];
@@ -84,6 +86,18 @@ export interface DecisionInput {
   alreadyBooked: boolean;
   /** How many times each slot has already been asked for in this session. */
   askCounts: Record<string, number>;
+  /**
+   * Whether the patient has already explicitly asked to book, sticky across
+   * the day/time sub-dialog that follows. Without this, answering "Tuesday
+   * morning" to "what day works for you?" would look like a fresh turn with
+   * no booking request in it, and the readiness gate would ask "would you
+   * like me to find you an appointment?" all over again -- the exact
+   * repetition failure this codebase keeps having to design around.
+   */
+  bookingRequested: boolean;
+  /** Set once the patient has given a day/time preference, or null while
+   *  still waiting on one. See preference.ts. */
+  schedulingPreference: SchedulingPreference | null;
 }
 
 export function decide(input: DecisionInput): Decision {
@@ -217,29 +231,57 @@ export function decide(input: DecisionInput): Decision {
   // consent, and this is the gate that keeps a well-informed agent from
   // steamrolling an ambivalent person.
   const readiness = signals?.readiness ?? "not_raised";
-  if (readiness !== "explicit_request") {
-    const ambivalent = readiness === "ambivalent" || signals?.hesitation === "strong";
+  const explicitNow = readiness === "explicit_request";
+  const ambivalentNow = readiness === "ambivalent" || signals?.hesitation === "strong";
+
+  // Booking intent carries across the day/time sub-dialog below (sticky),
+  // but a *fresh* sign of hesitation always overrides stickiness -- someone
+  // who said "book it" and then, mid-scheduling, says "actually, wait" must
+  // land back here, not get asked what day works as if nothing changed.
+  const wantsToBook = !ambivalentNow && (explicitNow || input.bookingRequested);
+
+  if (!wantsToBook) {
     return {
       ...withRecommendation,
       outcome: "ASK",
       gate: "readiness",
-      reason: ambivalent
+      reason: ambivalentNow
         ? `Patient is ambivalent (readiness=${readiness}, hesitation=${signals?.hesitation ?? "unknown"}). Complete facts are not consent.`
         : `Patient has not asked to proceed (readiness=${readiness}).`,
       missingSlot: "readiness",
-      say: ambivalent
+      say: ambivalentNow
         ? "Plenty of people feel exactly that way about it, and there's no rush from my side. " +
           "What's the part that puts you off most? I'd rather talk that through than push you."
         : `${recommendation.patientSummary} Would you like me to find you an appointment?`,
     };
   }
 
+  // --- Gate 6: scheduling ----------------------------------------------------
+  // Asked only now, after readiness is established -- asking "what day works"
+  // before the patient has agreed to anything would presume a consent they
+  // haven't given. This is also why it's a separate gate rather than folded
+  // into ACT's side effect: ACT should mean "go", not "go, then negotiate."
+  if (!input.schedulingPreference && !exhausted("scheduling_preference")) {
+    return {
+      ...withRecommendation,
+      outcome: "ASK",
+      gate: "scheduling",
+      reason: "Patient is ready to book but hasn't given a day/time preference yet.",
+      missingSlot: "scheduling_preference",
+      say: "What day or time generally works best for you? Or just say the word and I'll grab the soonest opening.",
+    };
+  }
+  // Exhausted without an answer: proceed anyway. Unlike a missing clinical
+  // fact, "couldn't parse a time preference after three tries" isn't a safety
+  // concern -- defaulting silently to the soonest opening is the sensible
+  // move, not a reason to escalate to a person.
+
   // --- ACT -----------------------------------------------------------------
   return {
     ...withRecommendation,
     outcome: "ACT",
     gate: "act",
-    reason: `All gates passed: screening indicated (${recommendation.riskTier}), symptoms addressed, patient explicitly requested booking.`,
+    reason: `All gates passed: screening indicated (${recommendation.riskTier}), symptoms addressed, patient has asked to proceed.`,
     missingSlot: null,
     say: "",
   };

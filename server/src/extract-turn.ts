@@ -88,6 +88,13 @@ A request is not a fact. "Can you book it for me" tells us what the patient
 wants, which is carried by request_type below, and must not become a clinical
 fact about a procedure they have had.
 
+A day, time, or scheduling preference is not a clinical fact either. "Tuesday
+morning works" or "as soon as possible" answers a logistics question, not a
+clinical one -- it has no subject, no attribute, no status in this domain, and
+must produce no operation at all. If a reply mixes the two -- "Tuesday
+morning, and I should also mention I've been having some cramping" -- record
+only the clinical half.
+
 SIGNALS
 
 Report how the patient sounds in this reply, not what they said.

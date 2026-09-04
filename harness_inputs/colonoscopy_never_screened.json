@@ -1,6 +1,6 @@
 {
   "name": "colonoscopy_never_screened",
-  "description": "Happy path. Stated negative, a self-correction, a restatement, symptoms cleared, then an explicit request. Should end in a real booking.",
+  "description": "Happy path. Stated negative, a self-correction, a restatement, symptoms cleared, an explicit request, then a day/time preference. Should end in a real booking.",
   "patientName": "Ellen",
   "patientAge": 53,
   "turns": [
@@ -45,6 +45,13 @@
     {
       "role": "user",
       "content": "You know what, I've been putting this off long enough. Yes, please book it for me.",
+      "expectOutcome": "ASK",
+      "expectGate": "scheduling"
+    },
+    { "role": "agent", "content": "What day or time generally works best for you?" },
+    {
+      "role": "user",
+      "content": "Tuesday morning would be great, thanks.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }

@@ -20,6 +20,7 @@ import { extractTurn } from "./extract-turn.js";
 import { decide, type Decision } from "./decide.js";
 import { composeReply, type ComposedReply } from "./compose.js";
 import { scheduleScreening, type SchedulingResult } from "./scheduler.js";
+import { describePreference, parseSchedulingPreference, type SchedulingPreference } from "./preference.js";
 import {
   applyOperations,
   createLedger,
@@ -76,6 +77,11 @@ export interface Session {
   resolution: SchedulingResult | null;
   /** How often each slot has been asked for, so the engine can stop looping. */
   askCounts: Record<string, number>;
+  /** Sticky across the day/time sub-dialog; see decide.ts's readiness gate. */
+  bookingRequested: boolean;
+  /** The patient's stated day/time preference, once given. Logistics, not a
+   *  clinical fact, so it lives here rather than in the ledger. */
+  schedulingPreference: SchedulingPreference | null;
   /** Reviewer flags raised against specific turns. */
   flags: ReviewFlag[];
   /** Serializes extraction so turns apply in spoken order. */
@@ -97,6 +103,8 @@ export function createSession(patientName?: string | null, patientAge?: number |
     decisions: [],
     resolution: null,
     askCounts: {},
+    bookingRequested: false,
+    schedulingPreference: null,
     flags: [],
     queue: Promise.resolve(),
   };
@@ -185,6 +193,17 @@ export async function appendTurn(
         applied,
       });
 
+      // Parsed deterministically (preference.ts), not through the clinical
+      // extraction pass -- a day/time is logistics, not history. Gated on
+      // booking intent (this turn's or already sticky) so a stray weekday
+      // mentioned earlier in the conversation for an unrelated reason never
+      // gets mistaken for a scheduling answer.
+      const justAskedToBook = session.signals.readiness === "explicit_request";
+      if ((justAskedToBook || session.bookingRequested) && !session.schedulingPreference) {
+        const preference = parseSchedulingPreference(content);
+        if (preference) session.schedulingPreference = preference;
+      }
+
       runDecision(session, turn.index);
     } catch (error) {
       session.trace.push({
@@ -227,28 +246,45 @@ function runDecision(session: Session, turn: number): void {
     signals: session.signals,
     alreadyBooked: session.resolution?.status === "booked",
     askCounts: session.askCounts,
+    bookingRequested: session.bookingRequested,
+    schedulingPreference: session.schedulingPreference,
   });
 
   if (decision.missingSlot) {
     session.askCounts[decision.missingSlot] = (session.askCounts[decision.missingSlot] ?? 0) + 1;
   }
 
+  // Persist booking intent for the next turn. A fresh ambivalent turn always
+  // routes back through the readiness gate inside decide() regardless of this
+  // flag, so clearing it here on that outcome can't suppress a change of
+  // heart -- see decide.ts's wantsToBook.
+  if (decision.gate === "readiness") session.bookingRequested = false;
+  else if (decision.gate === "scheduling" || decision.outcome === "ACT") session.bookingRequested = true;
+
   if (decision.outcome === "ACT" && decision.recommendation) {
-    const result = scheduleScreening(decision.recommendation.bookWithinDays);
+    const result = scheduleScreening(decision.recommendation.bookWithinDays, session.schedulingPreference);
     session.resolution = result;
-    decision.say =
-      result.status === "booked"
-        ? `You're booked: ${formatSlot(result.booking.slot)}. Your confirmation number is ` +
-          `${result.booking.confirmationId}, and I'll send the prep instructions over. ` +
-          `${result.booking.prepInstructions[0]}`
-        : `I couldn't get you in inside the window I'd want for you — ${result.reason} ${result.nextStep}`;
+    if (result.status === "booked") {
+      const preferenceNote =
+        session.schedulingPreference && !result.matchedPreference
+          ? ` I couldn't match ${describePreference(session.schedulingPreference)} exactly, so here's the closest opening I could get:`
+          : "";
+      decision.say =
+        `You're booked.${preferenceNote} ${formatSlot(result.booking.slot)}. Your confirmation number is ` +
+        `${result.booking.confirmationId}, and I'll send the prep instructions over. ` +
+        `${result.booking.prepInstructions[0]}`;
+    } else {
+      decision.say = `I couldn't get you in inside the window I'd want for you — ${result.reason} ${result.nextStep}`;
+    }
     session.trace.push({
       turn,
       at: new Date().toISOString(),
       kind: "resolution",
       detail:
         result.status === "booked"
-          ? `booked ${result.booking.confirmationId} at ${result.booking.slot.clinic}`
+          ? `booked ${result.booking.confirmationId} at ${result.booking.slot.clinic} (${
+              result.matchedPreference ? "matched preference" : "closest to preference"
+            })`
           : `waitlisted ${result.waitlistId}: ${result.reason}`,
     });
   }

@@ -15,8 +15,14 @@
  * window is tighter than that (elevated risk, never screened) falls through to
  * the waitlist. That means the failure is a property of the scenario rather
  * than of a coin flip, and the eval suite can assert on it.
+ *
+ * Booking also takes an optional day/time preference (see preference.ts). The
+ * patient is asked for one before ACT fires -- see decide.ts's "scheduling"
+ * gate -- and this is where it actually gets used to pick a slot rather than
+ * always grabbing the earliest one.
  */
 import { randomUUID } from "node:crypto";
+import { describePreference, type SchedulingPreference, type TimeOfDay } from "./preference.js";
 
 /** Colonoscopy needs prep, a driver, and a scoped room. Nothing inside three
  *  weeks in this mock clinic, which is realistic and makes the tight-window
@@ -30,6 +36,8 @@ export interface Slot {
   startsAt: string;
   durationMinutes: number;
   daysOut: number;
+  dayOfWeek: number;
+  timeOfDay: TimeOfDay;
 }
 
 export interface Hold {
@@ -46,12 +54,19 @@ export interface Booking {
 }
 
 export type SchedulingResult =
-  | { status: "booked"; booking: Booking }
+  | { status: "booked"; booking: Booking; matchedPreference: boolean }
   | { status: "waitlisted"; waitlistId: string; reason: string; earliestAvailableDays: number; nextStep: string };
 
 const CLINICS = [
   { name: "Bay Endoscopy Center", offsets: [21, 28, 35] },
   { name: "Mission GI Associates", offsets: [24, 31] },
+];
+
+/** One morning and one afternoon opening per day-out, so a time-of-day
+ *  preference has something to actually match against. */
+const TIMES_OF_DAY: Array<{ timeOfDay: TimeOfDay; hour: number }> = [
+  { timeOfDay: "morning", hour: 9 },
+  { timeOfDay: "afternoon", hour: 14 },
 ];
 
 const holds = new Map<string, Hold>();
@@ -65,18 +80,54 @@ export function searchSlots(withinDays: number, now: Date = new Date()): Slot[] 
   for (const clinic of CLINICS) {
     for (const daysOut of clinic.offsets) {
       if (daysOut > withinDays) continue;
-      const startsAt = new Date(now.getTime() + daysOut * 24 * 60 * 60 * 1000);
-      startsAt.setHours(9, 0, 0, 0);
-      slots.push({
-        id: `slot-${clinic.name.split(" ")[0].toLowerCase()}-${daysOut}`,
-        clinic: clinic.name,
-        startsAt: startsAt.toISOString(),
-        durationMinutes: 60,
-        daysOut,
-      });
+      for (const { timeOfDay, hour } of TIMES_OF_DAY) {
+        const startsAt = new Date(now.getTime() + daysOut * 24 * 60 * 60 * 1000);
+        startsAt.setHours(hour, 0, 0, 0);
+        slots.push({
+          id: `slot-${clinic.name.split(" ")[0].toLowerCase()}-${daysOut}-${timeOfDay}`,
+          clinic: clinic.name,
+          startsAt: startsAt.toISOString(),
+          durationMinutes: 60,
+          daysOut,
+          dayOfWeek: startsAt.getDay(),
+          timeOfDay,
+        });
+      }
     }
   }
-  return slots.sort((a, b) => a.daysOut - b.daysOut);
+  // Sorted by urgency first, then morning before afternoon, so "the soonest
+  // opening" and "no preference given" both resolve to the same, predictable
+  // slot -- important for the eval suite asserting on a specific booking.
+  return slots.sort((a, b) => a.daysOut - b.daysOut || (a.timeOfDay === b.timeOfDay ? 0 : a.timeOfDay === "morning" ? -1 : 1));
+}
+
+/**
+ * Picks the best-matching slot for a stated preference.
+ *
+ * Falls back in three steps -- exact day+time, day only, time only -- before
+ * giving up and taking the earliest opening. `matched` distinguishes "got
+ * exactly what they asked for" from "closest available," which is what lets
+ * the booking message be honest about the difference instead of always
+ * saying "you're booked for X" as if that was guaranteed.
+ */
+function pickSlot(slots: Slot[], preference: SchedulingPreference | null): { slot: Slot; matched: boolean } {
+  if (!preference || preference.soonest) return { slot: slots[0], matched: true };
+
+  const wantsDay = preference.dayOfWeek != null;
+  const wantsTime = preference.timeOfDay != null;
+  const matchesDay = (slot: Slot) => !wantsDay || slot.dayOfWeek === preference.dayOfWeek;
+  const matchesTime = (slot: Slot) => !wantsTime || slot.timeOfDay === preference.timeOfDay;
+
+  const exact = slots.find((slot) => matchesDay(slot) && matchesTime(slot));
+  if (exact) return { slot: exact, matched: true };
+
+  const dayOnly = wantsDay ? slots.find(matchesDay) : undefined;
+  if (dayOnly) return { slot: dayOnly, matched: false };
+
+  const timeOnly = wantsTime ? slots.find(matchesTime) : undefined;
+  if (timeOnly) return { slot: timeOnly, matched: false };
+
+  return { slot: slots[0], matched: false };
 }
 
 export function holdSlot(slot: Slot): Hold {
@@ -115,10 +166,16 @@ const PREP_INSTRUCTIONS = [
  * A resolution layer with only a happy path proves nothing, so the waitlist
  * branch returns a concrete next step rather than an apology.
  */
-export function scheduleScreening(withinDays: number, now: Date = new Date()): SchedulingResult {
+export function scheduleScreening(
+  withinDays: number,
+  preference: SchedulingPreference | null = null,
+  now: Date = new Date(),
+): SchedulingResult {
   const slots = searchSlots(withinDays, now);
 
   if (slots.length === 0) {
+    // A day/time preference has nothing to filter here -- there is no
+    // capacity in the window at all, preferred or otherwise.
     const earliest = Math.min(...CLINICS.flatMap((clinic) => clinic.offsets));
     return {
       status: "waitlisted",
@@ -131,7 +188,8 @@ export function scheduleScreening(withinDays: number, now: Date = new Date()): S
     };
   }
 
-  return { status: "booked", booking: confirmHold(holdSlot(slots[0]).id) };
+  const { slot, matched } = pickSlot(slots, preference);
+  return { status: "booked", booking: confirmHold(holdSlot(slot).id), matchedPreference: matched };
 }
 
 export { FIRST_AVAILABLE_DAYS };

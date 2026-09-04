@@ -1,7 +1,7 @@
 {
   "name": "text_mode_full_journey",
   "mode": "text",
-  "description": "The real product path: only the patient speaks and every Daphne reply is produced by the decision engine. Hesitation must block the booking, and the booking must land once the patient actually asks. Also asserts that authored clinical wording reaches the patient verbatim.",
+  "description": "The real product path: only the patient speaks and every Daphne reply is produced by the decision engine. Hesitation must block the booking, the engine must ask for a day/time before acting, and the booking must land once both are satisfied. Also asserts that authored clinical wording reaches the patient verbatim.",
   "patientName": "Ellen",
   "patientAge": 53,
   "turns": [
@@ -32,6 +32,12 @@
     {
       "role": "user",
       "content": "Okay, you've talked me into it. Please go ahead and book it.",
+      "expectOutcome": "ASK",
+      "expectGate": "scheduling"
+    },
+    {
+      "role": "user",
+      "content": "Wednesday afternoon works for me.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }
