@@ -244,10 +244,12 @@ These are real blockers, not paperwork.
    Backend, frontend, and a live signed-URL round trip to ElevenLabs all verified. The server now
    loads its own `.env` via `--env-file-if-exists`, so `npm run dev` works from a clean clone
    without a wrapper script.
-2. **Extraction still has no provider.** `/api/summarize` returns
-   `Could not load credentials from any providers`. The old path used a previous employer's AWS SSO
-   profile, which does not belong in a personal job-application project. Needs a personal key
-   (OpenAI or Anthropic) behind a small provider abstraction — the last Phase 0 task.
+2. **~~Extraction has no provider.~~ Resolved.** Both model passes moved off a previous employer's
+   AWS Bedrock account onto a personal OpenAI key, behind one module
+   ([`server/src/llm.ts`](server/src/llm.ts)) so the provider is a single edit rather than a hunt
+   through call sites. The AWS SDK dependency is gone. `/api/summarize` verified end to end: correct
+   extraction, both guideline rules, a familial cluster, a symptom referral, and a data gap all fire
+   as they did on Bedrock.
 3. **Prune before sharing.** `transcripts/` contains Bond's NDA'd demo transcript and my own
    interview-prep notes. Neither belongs in a submission. The prior-art doc in `docs/` also
    references a previous employer's customers and internal paths. Both are already in git history,
@@ -260,15 +262,19 @@ These are real blockers, not paperwork.
 ## Running it
 
 ```bash
-cp server/.env.example server/.env      # then set BOND_ELEVEN_LABS_API_KEY
+cp server/.env.example server/.env   # set BOND_ELEVEN_LABS_API_KEY and OPENAI_API_KEY
 (cd server && npm install && npm run dev)      # http://127.0.0.1:8790
 (cd frontend && npm install && npm run dev)    # http://127.0.0.1:5190
 ```
 
 Or `scripts/restart_local_servers.sh` to do both, with port cleanup and health checks.
 
-Verified working: `/api/health`, `/api/agents` (8 agents), and `/api/signed-url`, which performs a
-real round trip to ElevenLabs and returns a `wss://` conversation URL. A voice call needs only a
-microphone and browser permission.
+All verified from this checkout:
 
-Not yet working: `/api/summarize`, pending the provider decision in open item 2 above.
+- `/api/health` and `/api/agents` — 8 agents
+- `/api/signed-url` — real round trip to ElevenLabs, returns a `wss://` conversation URL. A voice
+  call needs only a microphone and browser permission.
+- `/api/summarize` — extraction, age timeline, and insights on a personal OpenAI key
+
+Only two secrets are needed, both personal: an ElevenLabs key for voice and an OpenAI key for
+everything else. No employer account is involved anywhere in this repo.

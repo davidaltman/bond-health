@@ -21,7 +21,7 @@
  * example guideline_rules table in followup_task_rules.md -- a stand-in for
  * what a real clinical content review would produce, not the real thing.
  */
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { completeJson } from "./llm.js";
 import type { HealthEvent } from "./timeline.js";
 
 export type FollowUpWhen = "few_weeks" | "next_visit" | "no_visit" | "next_call";
@@ -35,21 +35,12 @@ export interface FollowUpItem {
   authoredBy: "guideline_table" | "pattern_template" | "deterministic_check";
 }
 
-// Deliberately a *different, stronger* model than timeline.ts's health-events
-// extraction (Haiku 4.5) -- this pass makes judgment calls across multiple
-// people's records (clustering, referral triage), so it gets its own model
-// knob (FOLLOWUPS_BEDROCK_MODEL_ID) rather than sharing BEDROCK_MODEL_ID.
-//
-// Verified 2026-08-20 against this AWS account/region: the newest bare
-// "us.anthropic.claude-sonnet-5" model does not yet support combining
-// Bedrock's structured json_schema output (which this file depends on for
-// guaranteed-parseable results) with its new adaptive-thinking/effort
-// controls -- confirmed by direct Converse API calls, not assumed. Sonnet
-// 4.5 (below) supports classic extended thinking together with json_schema
-// output, so it's the model actually wired in here.
-const DEFAULT_MODEL_ID = process.env.FOLLOWUPS_BEDROCK_MODEL_ID || "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
-const DEFAULT_REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-west-2";
-const THINKING_BUDGET_TOKENS = 4096;
+// This pass makes judgment calls across several people's records (clustering,
+// referral triage), so it gets its own model knob and a higher reasoning
+// effort than timeline.ts's straightforward extraction. On Bedrock this was a
+// deliberately stronger model with extended thinking enabled; the OpenAI
+// equivalent is the same model at a higher reasoning_effort.
+const FOLLOWUPS_MODEL = process.env.FOLLOWUPS_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-5.4-mini";
 
 export const WHEN_ORDER: FollowUpWhen[] = ["few_weeks", "next_visit", "no_visit", "next_call"];
 const MAX_ITEMS = 8;
@@ -146,7 +137,7 @@ const URGENCY_TO_WHEN: Record<"routine" | "soon" | "urgent", FollowUpWhen> = {
 };
 
 // ---------------------------------------------------------------------------
-// Single Bedrock pass: classification only (which people, which pattern,
+// Single model pass: classification only (which people, which pattern,
 // which specialty, which guideline is already satisfied). See file header
 // for why action copy is not part of this model's job.
 // ---------------------------------------------------------------------------
@@ -297,7 +288,6 @@ interface PatternExtractionResult {
 }
 
 async function runPatternExtraction(events: HealthEvent[], age: number | null): Promise<PatternExtractionResult> {
-  const client = new BedrockRuntimeClient({ region: DEFAULT_REGION });
   const userPrompt = [
     `Patient age: ${age != null ? age : "unknown"}`,
     "",
@@ -307,44 +297,15 @@ async function runPatternExtraction(events: HealthEvent[], age: number | null): 
     "Return strict JSON matching the schema you were given.",
   ].join("\n");
 
-  const command = new ConverseCommand({
-    modelId: DEFAULT_MODEL_ID,
-    system: [{ text: PATTERN_SYSTEM_PROMPT }],
-    messages: [{ role: "user", content: [{ text: userPrompt }] }],
-    // Extended thinking requires temperature to be left at its default (1) --
-    // Bedrock rejects an explicit temperature override when thinking is
-    // enabled, so consistency comes from the reasoning step itself rather
-    // than from pinning temperature to 0 (which is what timeline.ts's
-    // simpler extraction pass relies on instead).
-    inferenceConfig: { maxTokens: THINKING_BUDGET_TOKENS + 2048 },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    additionalModelRequestFields: {
-      thinking: { type: "enabled", budget_tokens: THINKING_BUDGET_TOKENS },
-    } as any,
-    outputConfig: {
-      textFormat: {
-        type: "json_schema",
-        structure: {
-          jsonSchema: {
-            schema: JSON.stringify(PATTERN_JSON_SCHEMA),
-            name: "pattern_extraction",
-          },
-        },
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any,
+  return completeJson<PatternExtractionResult>({
+    system: PATTERN_SYSTEM_PROMPT,
+    user: userPrompt,
+    schemaName: "pattern_extraction",
+    schema: PATTERN_JSON_SCHEMA,
+    model: FOLLOWUPS_MODEL,
+    maxOutputTokens: 8192,
+    reasoningEffort: "medium",
   });
-
-  const response = await client.send(command);
-  const blocks = response.output?.message?.content ?? [];
-  const text = blocks
-    .map((block) => (block && "text" in block ? block.text ?? "" : ""))
-    .join("")
-    .trim();
-  if (!text) {
-    throw new Error("Bedrock pattern extraction returned empty output");
-  }
-  return JSON.parse(text) as PatternExtractionResult;
 }
 
 // ---------------------------------------------------------------------------

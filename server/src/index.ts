@@ -6,9 +6,9 @@
  *     reaches the browser (the frontend is a thin wrapper -- it must not
  *     expose ElevenLabs credentials or even that ElevenLabs is the backing
  *     provider).
- *  2. Run the post-call Bedrock timeline extraction (see timeline.ts) once a
+ *  2. Run the post-call timeline extraction (see timeline.ts) once a
  *     conversation has ended, so the frontend can render a summary + Mermaid
- *     diagram without needing AWS credentials itself.
+ *     diagram without needing model credentials itself.
  *
  * Not a production service: no auth, no rate limiting, CORS wide open to the
  * local Vite dev origin only. Sandbox demo, matching the rest of

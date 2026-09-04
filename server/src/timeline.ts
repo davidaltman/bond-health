@@ -8,7 +8,7 @@
  * mid-call logging tool) is stubbed, so this is currently the only source of
  * health_events for the demo.
  */
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { completeJson } from "./llm.js";
 
 export interface TranscriptTurn {
   role: "agent" | "user" | "customer" | "patient";
@@ -32,9 +32,6 @@ export interface ExtractionResult {
   health_events: HealthEvent[];
   session_summary: string;
 }
-
-const DEFAULT_MODEL_ID = process.env.BEDROCK_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0";
-const DEFAULT_REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-west-2";
 
 const EXTRACTION_SYSTEM_PROMPT = `You are a clinical history extraction system. You will be given a transcript of a
 conversation between a patient and Daphne, a voice health assistant, along with a
@@ -114,7 +111,6 @@ function transcriptToText(turns: TranscriptTurn[]): string {
 }
 
 export async function extractHealthEvents(turns: TranscriptTurn[]): Promise<ExtractionResult> {
-  const client = new BedrockRuntimeClient({ region: DEFAULT_REGION });
   const userPrompt = [
     "Transcript:",
     transcriptToText(turns),
@@ -126,36 +122,16 @@ export async function extractHealthEvents(turns: TranscriptTurn[]): Promise<Extr
     "Return strict JSON matching the schema you were given.",
   ].join("\n");
 
-  const command = new ConverseCommand({
-    modelId: DEFAULT_MODEL_ID,
-    system: [{ text: EXTRACTION_SYSTEM_PROMPT }],
-    messages: [{ role: "user", content: [{ text: userPrompt }] }],
-    inferenceConfig: { maxTokens: 4096 },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    outputConfig: {
-      textFormat: {
-        type: "json_schema",
-        structure: {
-          jsonSchema: {
-            schema: JSON.stringify(HEALTH_EVENTS_JSON_SCHEMA),
-            name: "health_events_extraction",
-          },
-        },
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any,
+  // Straight transcription-to-structure work, so the cheap reasoning setting
+  // is enough. The judgment-heavy pass lives in followups.ts and asks for more.
+  return completeJson<ExtractionResult>({
+    system: EXTRACTION_SYSTEM_PROMPT,
+    user: userPrompt,
+    schemaName: "health_events_extraction",
+    schema: HEALTH_EVENTS_JSON_SCHEMA,
+    maxOutputTokens: 8192,
+    reasoningEffort: "low",
   });
-
-  const response = await client.send(command);
-  const blocks = response.output?.message?.content ?? [];
-  const text = blocks
-    .map((block) => (block && "text" in block ? block.text ?? "" : ""))
-    .join("")
-    .trim();
-  if (!text) {
-    throw new Error("Bedrock extraction returned empty output");
-  }
-  return JSON.parse(text) as ExtractionResult;
 }
 
 const PERSON_SECTION_ORDER = ["self", "mother", "father", "sibling", "grandmother", "grandfather"];
