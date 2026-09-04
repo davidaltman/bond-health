@@ -194,8 +194,8 @@ prompt. Prompts tune tone; structure enforces behavior. (Full incident write-up:
 | 2 | Decision engine: gates, four outcomes, decision log | 2.5h | done — 5 scenarios, 53/53 |
 | 3 | Mock scheduling + resolution, including the unhappy path | 1.5h | done — booking + waitlist |
 | 4 | Daphne conversation layer + tone/readiness policy | 1.0h | done — text loop closed |
-| 5 | Session Review pane (real-time signal) | 1.5h | next |
-| 6 | Eval runner + ~8 scenario cases | 1.0h | |
+| 5 | Session Review pane (real-time signal) | 1.5h | done — per-turn gate trace + flagging |
+| 6 | Eval runner + ~8 scenario cases | 1.0h | done — `npm run eval`, 6 scenarios |
 |   | **Total** | **10.0h** | |
 
 README is written continuously, not at the end.
@@ -304,5 +304,21 @@ Six scenarios, 74 assertions, one per gate:
 | `out_of_scope_dosing` | a warfarin dosing question → STOP, whatever else is true |
 | `no_slots_waitlist` | clinical window inside the clinic's lead time → waitlist with a next step |
 
+Or `npm run eval` from `server/`.
+
 Assertions are on decisions and state, never on wording. Scenarios declare their own expectations,
 so a new case is a JSON file rather than a code change.
+
+### The loop between live review and offline eval
+
+The Session Review pane shows, per turn, which gate fired and why — the thing a transcript can't
+tell you, since "I'd rather not book that yet" reads identically whether the agent respected
+hesitation or failed to notice it could act.
+
+Flagging a turn there and hitting **Export as eval case** downloads the session in the same format
+`harness_inputs/` uses, ready to run. Observed outcomes are filled in as expectations, except on
+flagged turns, which are marked `FIXME` — for a flagged turn the observed outcome is by definition
+the wrong one, and exporting it as the expectation would lock in the bug that got flagged.
+
+Verified end to end: a live session exported to JSON and replayed as a regression case passes 9/9
+without hand-editing.

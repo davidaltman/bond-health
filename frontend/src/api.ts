@@ -1,7 +1,9 @@
 import type {
   AgentOption,
   ExchangeResult,
+  ReviewFlag,
   SummarizeResponse,
+  TraceEvent,
   TranscriptEntry,
   TranscriptRole,
   TurnResult,
@@ -64,6 +66,34 @@ export async function sendMessage(sessionId: string, content: string): Promise<E
     body: JSON.stringify({ content }),
   });
   return jsonOrThrow<ExchangeResult>(response);
+}
+
+export async function fetchSessionState(sessionId: string): Promise<{
+  trace: TraceEvent[];
+  flags: ReviewFlag[];
+}> {
+  const response = await fetch(`${SERVER_URL}/api/session/${sessionId}`);
+  return jsonOrThrow(response);
+}
+
+export async function flagTurn(
+  sessionId: string,
+  turn: number,
+  note: string,
+): Promise<{ flags: ReviewFlag[] }> {
+  const response = await fetch(`${SERVER_URL}/api/session/${sessionId}/flag`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ turn, note }),
+  });
+  return jsonOrThrow(response);
+}
+
+export async function fetchScenarioExport(sessionId: string, name: string): Promise<unknown> {
+  const response = await fetch(
+    `${SERVER_URL}/api/session/${sessionId}/scenario?name=${encodeURIComponent(name)}`,
+  );
+  return jsonOrThrow(response);
 }
 
 export async function summarizeTranscript(options: {

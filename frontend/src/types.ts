@@ -166,6 +166,27 @@ export interface TurnResult {
   resolution: Resolution | null;
 }
 
+export interface TraceEvent {
+  turn: number;
+  at: string;
+  kind:
+    | "turn_received"
+    | "operations_applied"
+    | "extraction_failed"
+    | "extraction_skipped"
+    | "decision"
+    | "resolution";
+  detail: string;
+  decision?: Decision;
+}
+
+export interface ReviewFlag {
+  turn: number;
+  note: string;
+  expectedOutcome: string | null;
+  at: string;
+}
+
 export interface ComposedReply {
   text: string;
   acknowledgment: string;

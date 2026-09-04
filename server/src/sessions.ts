@@ -53,6 +53,14 @@ export interface TraceEvent {
   decision?: Decision;
 }
 
+export interface ReviewFlag {
+  turn: number;
+  note: string;
+  /** What the reviewer says should have happened, when they know. */
+  expectedOutcome: string | null;
+  at: string;
+}
+
 export interface Session {
   id: string;
   createdAt: string;
@@ -68,6 +76,8 @@ export interface Session {
   resolution: SchedulingResult | null;
   /** How often each slot has been asked for, so the engine can stop looping. */
   askCounts: Record<string, number>;
+  /** Reviewer flags raised against specific turns. */
+  flags: ReviewFlag[];
   /** Serializes extraction so turns apply in spoken order. */
   queue: Promise<void>;
 }
@@ -87,6 +97,7 @@ export function createSession(patientName?: string | null, patientAge?: number |
     decisions: [],
     resolution: null,
     askCounts: {},
+    flags: [],
     queue: Promise.resolve(),
   };
   sessions.set(session.id, session);
@@ -250,6 +261,54 @@ function runDecision(session: Session, turn: number): void {
     detail: `${decision.outcome} via ${decision.gate}: ${decision.reason}`,
     decision,
   });
+}
+
+/**
+ * Turns a reviewed session into a scenario the eval suite can run.
+ *
+ * This is the join between the two halves of "watching and improving": a turn
+ * a human flagged in a live session becomes a regression case, in the same
+ * format as the hand-written ones, without anyone retyping the conversation.
+ *
+ * Observed outcomes are written in as the expectations, which is deliberate but
+ * needs saying out loud: for a flagged turn the observed outcome is by
+ * definition the wrong one. The export marks those turns so the reviewer edits
+ * them to what should have happened. Exporting the bug as the expectation would
+ * lock in the very behaviour that got flagged.
+ */
+export function exportScenario(session: Session, name: string): Record<string, unknown> {
+  const flaggedTurns = new Map(session.flags.map((flag) => [flag.turn, flag]));
+  const decisionsByTurn = new Map(session.decisions.map((decision) => [decision.turn, decision]));
+
+  const turns = session.turns.map((turn) => {
+    const entry: Record<string, unknown> = { role: turn.role, content: turn.content };
+    if (turn.role !== "user") return entry;
+
+    const decision = decisionsByTurn.get(turn.index);
+    const flag = flaggedTurns.get(turn.index);
+    if (flag) {
+      entry.FIXME = `Flagged: ${flag.note}. Observed ${decision?.outcome ?? "nothing"}; set expectOutcome to what should have happened.`;
+      entry.expectOutcome = flag.expectedOutcome ?? decision?.outcome ?? null;
+    } else if (decision) {
+      entry.expectOutcome = decision.outcome;
+      entry.expectGate = decision.gate;
+    }
+    return entry;
+  });
+
+  return {
+    name,
+    description: `Captured from a live session on ${new Date().toISOString().slice(0, 10)}.${
+      session.flags.length ? ` ${session.flags.length} flagged turn(s) need expectations reviewed.` : ""
+    }`,
+    patientName: session.patientName,
+    patientAge: session.patientAge,
+    turns,
+    expect: {
+      finalOutcome: session.decisions.at(-1)?.outcome ?? null,
+      resolution: session.resolution?.status ?? "none",
+    },
+  };
 }
 
 function formatSlot(slot: { clinic: string; startsAt: string }): string {

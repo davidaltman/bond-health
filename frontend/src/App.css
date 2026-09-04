@@ -784,3 +784,80 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* --- session review (Phase 5) -------------------------------------------- */
+
+.review-panel {
+  margin-top: 20px;
+}
+
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+.review-turn {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+}
+
+.review-turn-flagged {
+  border-color: var(--danger);
+  background: #fef7f8;
+}
+
+.review-turn-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-turn-index {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.review-flag-button {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.review-said {
+  margin: 6px 0;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.review-line {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-top: 3px;
+}
+
+.review-line-muted {
+  opacity: 0.75;
+}
+
+.review-line-error {
+  color: var(--danger);
+}
+
+.review-flag-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}

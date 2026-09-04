@@ -20,7 +20,7 @@ import { extractHealthEvents, buildAgeTimeline, type TranscriptTurn } from "./ti
 import { generateFollowUps } from "./followups.js";
 import { BOND_AGENTS, DEFAULT_AGENT_ID } from "./agents.js";
 import { fetchConversationTranscript } from "./conversations.js";
-import { appendTurn, createSession, exchange, getSession, settle } from "./sessions.js";
+import { appendTurn, createSession, exchange, exportScenario, getSession, settle } from "./sessions.js";
 import { liveFacts } from "./ledger.js";
 
 const PORT = Number(process.env.PORT || 8790);
@@ -180,6 +180,41 @@ app.post("/api/session/:id/message", async (req, res) => {
   }
 });
 
+// Review: a human marks a turn that went wrong, and that turn becomes a
+// regression case. This is the loop between the two halves of "watching and
+// improving" -- without it, live review produces opinions and the eval suite
+// stays frozen at whatever its author imagined.
+app.post("/api/session/:id/flag", (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: `No session ${req.params.id}` });
+    return;
+  }
+  const flag = {
+    turn: Number(req.body?.turn),
+    note: String(req.body?.note ?? "").trim() || "flagged without a note",
+    expectedOutcome: req.body?.expectedOutcome ? String(req.body.expectedOutcome) : null,
+    at: new Date().toISOString(),
+  };
+  if (!Number.isInteger(flag.turn)) {
+    res.status(400).json({ error: "turn must be an integer" });
+    return;
+  }
+  session.flags.push(flag);
+  res.json({ flags: session.flags });
+});
+
+app.get("/api/session/:id/scenario", async (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: `No session ${req.params.id}` });
+    return;
+  }
+  await settle(session);
+  const name = String(req.query.name ?? `captured_${session.id.slice(0, 8)}`);
+  res.json(exportScenario(session, name));
+});
+
 app.get("/api/session/:id", async (req, res) => {
   const session = getSession(req.params.id);
   if (!session) {
@@ -199,6 +234,7 @@ app.get("/api/session/:id", async (req, res) => {
     decisions: session.decisions,
     decision: session.decisions.at(-1) ?? null,
     resolution: session.resolution,
+    flags: session.flags,
     trace: session.trace,
   });
 });

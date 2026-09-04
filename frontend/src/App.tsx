@@ -6,6 +6,7 @@ import { TranscriptPanel } from "./components/TranscriptPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import { LiveFactsPanel } from "./components/LiveFactsPanel";
 import { DecisionPanel } from "./components/DecisionPanel";
+import { ReviewPanel } from "./components/ReviewPanel";
 import { SummaryPanel } from "./components/SummaryPanel";
 import { useDaphneConversation } from "./useDaphneConversation";
 import { useTextConversation } from "./useTextConversation";
@@ -163,6 +164,15 @@ export default function App() {
             <TranscriptPanel status={status} transcript={transcript} errorMessage={errorMessage} />
           )}
           <DecisionPanel decision={activeDecision} resolution={activeResolution} />
+          {medium === "text" ? (
+            <ReviewPanel
+              trace={text.trace}
+              flaggedTurns={text.flags.map((entry) => entry.turn)}
+              onFlag={(turn, note) => void text.flag(turn, note)}
+              onExport={() => void text.exportScenario()}
+              busy={text.isThinking}
+            />
+          ) : null}
         </div>
 
         <div className="app-column app-column-right">
