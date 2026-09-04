@@ -20,6 +20,8 @@ import { extractHealthEvents, buildAgeTimeline, type TranscriptTurn } from "./ti
 import { generateFollowUps } from "./followups.js";
 import { BOND_AGENTS, DEFAULT_AGENT_ID } from "./agents.js";
 import { fetchConversationTranscript } from "./conversations.js";
+import { appendTurn, createSession, getSession, settle } from "./sessions.js";
+import { liveFacts } from "./ledger.js";
 
 const PORT = Number(process.env.PORT || 8790);
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://127.0.0.1:5190";
@@ -127,6 +129,53 @@ app.post("/api/summarize", async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Live session memory (Phase 1). Unlike /api/summarize above, which re-reads a
+// finished transcript, these endpoints maintain a queryable ledger while the
+// call is still running -- see docs/phase-1-spec.md.
+// ---------------------------------------------------------------------------
+
+app.post("/api/session", (req, res) => {
+  const session = createSession(req.body?.patientName, req.body?.patientAge);
+  res.json({ sessionId: session.id, createdAt: session.createdAt });
+});
+
+app.post("/api/session/:id/turn", async (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: `No session ${req.params.id}` });
+    return;
+  }
+  const role = req.body?.role === "agent" ? "agent" : "user";
+  const content = String(req.body?.content ?? "");
+  try {
+    const result = await appendTurn(session, role, content);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.get("/api/session/:id", async (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: `No session ${req.params.id}` });
+    return;
+  }
+  // Don't hand back a view that's mid-write on the last thing the patient said.
+  await settle(session);
+  res.json({
+    sessionId: session.id,
+    patientName: session.patientName,
+    patientAge: session.patientAge,
+    turns: session.turns,
+    facts: liveFacts(session.ledger),
+    allFacts: session.ledger.facts,
+    signals: session.signals,
+    trace: session.trace,
+  });
 });
 
 app.listen(PORT, () => {

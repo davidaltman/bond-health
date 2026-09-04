@@ -1,4 +1,4 @@
-import type { AgentOption, SummarizeResponse, TranscriptEntry } from "./types";
+import type { AgentOption, SummarizeResponse, TranscriptEntry, TranscriptRole, TurnResult } from "./types";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://127.0.0.1:8790";
 
@@ -21,6 +21,33 @@ export async function fetchSignedUrl(agentId: string): Promise<string> {
   const response = await fetch(`${SERVER_URL}/api/signed-url?agentId=${encodeURIComponent(agentId)}`);
   const body = await jsonOrThrow<{ signedUrl: string }>(response);
   return body.signedUrl;
+}
+
+// --- live session memory ---------------------------------------------------
+// Turns are posted as they arrive and the results land when they land. Nothing
+// in the conversation ever waits on these -- see docs/phase-1-spec.md.
+
+export async function createSession(patientName: string, patientAge?: number): Promise<string> {
+  const response = await fetch(`${SERVER_URL}/api/session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ patientName, patientAge }),
+  });
+  const body = await jsonOrThrow<{ sessionId: string }>(response);
+  return body.sessionId;
+}
+
+export async function postTurn(
+  sessionId: string,
+  role: TranscriptRole,
+  content: string,
+): Promise<TurnResult> {
+  const response = await fetch(`${SERVER_URL}/api/session/${sessionId}/turn`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, content }),
+  });
+  return jsonOrThrow<TurnResult>(response);
 }
 
 export async function summarizeTranscript(options: {

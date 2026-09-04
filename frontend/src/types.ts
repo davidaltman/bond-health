@@ -83,3 +83,52 @@ export interface SummarizeResponse {
   source: SummarizeSource | null;
   transcript: SummarizeTranscriptTurn[];
 }
+
+// --- live session memory (Phase 1) -----------------------------------------
+// Mirrors server/src/ledger.ts. `status: "never"` is a stated negative and is
+// deliberately different from a fact simply being absent.
+
+export type FactStatus = "active" | "resolved" | "never" | "unknown";
+export type FactState = "asserted" | "confirmed" | "contradicted" | "superseded";
+
+export interface ClinicalFact {
+  id: string;
+  subject: string;
+  category: "condition" | "symptom" | "medication" | "procedure" | "screening" | "family_history" | "allergy";
+  attribute: string;
+  value: string;
+  qualifiers: {
+    onsetAge: number | null;
+    lastOccurred: string | null;
+    status: FactStatus;
+  };
+  confidence: "high" | "medium" | "low";
+  provenance: "patient_stated" | "document_upload";
+  sourceQuote: string;
+  firstTurn: number;
+  lastTurn: number;
+  state: FactState;
+  supersededBy: string | null;
+  contradictionNote: string | null;
+}
+
+export interface ConversationSignals {
+  turn: number;
+  tone: "neutral" | "worried" | "frustrated" | "embarrassed" | "rushed";
+  hesitation: "none" | "mild" | "strong";
+  readiness: "not_raised" | "exploring" | "ambivalent" | "ready" | "explicit_request";
+  verbosity: "brief" | "normal" | "detailed";
+  sensitiveTopics: string[];
+}
+
+export interface TurnResult {
+  turnIndex: number;
+  applied: Array<{
+    outcome: "added" | "confirmed" | "refined" | "contradicted" | "coerced_to_merge" | "rejected";
+    factId: string | null;
+    proposedOp: string;
+    detail: string;
+  }>;
+  facts: ClinicalFact[];
+  signals: ConversationSignals | null;
+}

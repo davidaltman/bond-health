@@ -187,16 +187,16 @@ prompt. Prompts tune tone; structure enforces behavior. (Full incident write-up:
 
 10 hours, per the brief. Stopping at the cap and reporting the remainder honestly.
 
-| # | Phase | Est |
-|---|---|---|
-| 0 | Repo hygiene, provider wiring, runnable skeleton | 0.5h |
-| 1 | Fact ledger + signals + per-turn incremental extraction | 2.0h |
-| 2 | Decision engine: gates, four outcomes, decision log | 2.5h |
-| 3 | Mock scheduling + resolution, including the unhappy path | 1.5h |
-| 4 | Daphne conversation layer + tone/readiness policy | 1.0h |
-| 5 | Session Review pane (real-time signal) | 1.5h |
-| 6 | Eval runner + ~8 scenario cases | 1.0h |
-|   | **Total** | **10.0h** |
+| # | Phase | Est | Status |
+|---|---|---|---|
+| 0 | Repo hygiene, provider wiring, runnable skeleton | 0.5h | done |
+| 1 | Fact ledger + signals + per-turn incremental extraction | 2.0h | done — [spec](docs/phase-1-spec.md), 7/7 acceptance |
+| 2 | Decision engine: gates, four outcomes, decision log | 2.5h | next |
+| 3 | Mock scheduling + resolution, including the unhappy path | 1.5h | |
+| 4 | Daphne conversation layer + tone/readiness policy | 1.0h | |
+| 5 | Session Review pane (real-time signal) | 1.5h | |
+| 6 | Eval runner + ~8 scenario cases | 1.0h | |
+|   | **Total** | **10.0h** | |
 
 README is written continuously, not at the end.
 
@@ -275,6 +275,20 @@ All verified from this checkout:
 - `/api/signed-url` — real round trip to ElevenLabs, returns a `wss://` conversation URL. A voice
   call needs only a microphone and browser permission.
 - `/api/summarize` — extraction, age timeline, and insights on a personal OpenAI key
+- `/api/session/*` — live per-turn extraction into the fact ledger
 
 Only two secrets are needed, both personal: an ElevenLabs key for voice and an OpenAI key for
 everything else. No employer account is involved anywhere in this repo.
+
+### Replaying a scenario
+
+No microphone needed — this drives the live session endpoints from a scripted transcript and
+asserts on the resulting ledger.
+
+```bash
+node scripts/replay_session.mjs harness_inputs/colonoscopy_never_screened.json
+```
+
+It prints each turn's ledger operations and signals, the final fact table, and the acceptance
+checks. Exit code is non-zero if any check fails, so it works as a gate. Roughly one small model
+call per patient turn, 1–5s each, all off the conversational path.

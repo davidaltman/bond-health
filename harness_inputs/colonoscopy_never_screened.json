@@ -1,0 +1,41 @@
+{
+  "name": "colonoscopy_never_screened",
+  "description": "Screening conversation covering the four Phase 1 acceptance cases: an explicit stated negative, a self-correction, a restatement, and hesitation resolving into an explicit request.",
+  "patientName": "Ellen",
+  "patientAge": 53,
+  "turns": [
+    { "role": "agent", "content": "Hi Ellen, I'm Daphne. What's on your mind today?" },
+    {
+      "role": "user",
+      "content": "My doctor keeps bringing up a colonoscopy and honestly I keep putting it off."
+    },
+    { "role": "agent", "content": "That's really common. Have you ever had one before?" },
+    {
+      "role": "user",
+      "content": "No, never. I've never had a colonoscopy or any of those stool tests."
+    },
+    { "role": "agent", "content": "Got it. Has anyone in your family had colon cancer or polyps?" },
+    {
+      "role": "user",
+      "content": "My father had colon cancer. He was about 60 when they found it."
+    },
+    {
+      "role": "agent",
+      "content": "Thank you for telling me. That's useful for figuring out the right timing."
+    },
+    {
+      "role": "user",
+      "content": "Actually wait, I need to correct that. He was 52, not 60. I was mixing it up with my uncle."
+    },
+    { "role": "agent", "content": "Thanks for catching that. Anything else going on health-wise?" },
+    {
+      "role": "user",
+      "content": "Nothing major. Like I said I've never been screened, so I don't really know what to expect and the prep sounds awful."
+    },
+    { "role": "agent", "content": "The prep is the part most people dislike. Would it help to talk through what it involves?" },
+    {
+      "role": "user",
+      "content": "You know what, I've been putting this off long enough. Can you just get it scheduled for me?"
+    }
+  ]
+}
