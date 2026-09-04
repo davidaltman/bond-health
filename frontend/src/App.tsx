@@ -4,6 +4,7 @@ import { AltmanAILogo } from "./components/AltmanAILogo";
 import { CallControls } from "./components/CallControls";
 import { TranscriptPanel } from "./components/TranscriptPanel";
 import { LiveFactsPanel } from "./components/LiveFactsPanel";
+import { DecisionPanel } from "./components/DecisionPanel";
 import { SummaryPanel } from "./components/SummaryPanel";
 import { useDaphneConversation } from "./useDaphneConversation";
 import { fetchAgents, summarizeTranscript } from "./api";
@@ -36,8 +37,18 @@ export default function App() {
     [patientName, patientAge],
   );
 
-  const { status, transcript, errorMessage, facts, signals, start, stop, loadHistoricalTranscript } =
-    useDaphneConversation(dynamicVariables, patient);
+  const {
+    status,
+    transcript,
+    errorMessage,
+    facts,
+    signals,
+    decision,
+    resolution,
+    start,
+    stop,
+    loadHistoricalTranscript,
+  } = useDaphneConversation(dynamicVariables, patient);
 
   useEffect(() => {
     fetchAgents()
@@ -113,6 +124,7 @@ export default function App() {
 
         <div className="app-column app-column-center">
           <TranscriptPanel status={status} transcript={transcript} errorMessage={errorMessage} />
+          <DecisionPanel decision={decision} resolution={resolution} />
         </div>
 
         <div className="app-column app-column-right">

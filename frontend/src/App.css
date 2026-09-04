@@ -620,3 +620,97 @@
   background: #fff4e0;
   color: #9a6206;
 }
+
+/* --- decision engine (Phases 2-3) --------------------------------------- */
+
+.decision-panel {
+  margin-top: 20px;
+}
+
+.outcome-pill {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.outcome-ACT {
+  background: #e6f7ee;
+  color: #1a7f4b;
+}
+
+.outcome-ASK {
+  background: #eaf1ff;
+  color: var(--primary-dark);
+}
+
+.outcome-STOP {
+  background: #eef0f6;
+  color: var(--text-muted);
+}
+
+.outcome-HANDOFF {
+  background: #fdeaee;
+  color: var(--danger);
+}
+
+.decision-blurb {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.decision-reason,
+.decision-guideline {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.decision-gate,
+.decision-guideline-label {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  margin-right: 6px;
+  border-radius: 4px;
+  background: #eef0f6;
+  color: var(--text-muted);
+}
+
+.resolution {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+}
+
+.resolution-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.resolution-booked .resolution-title {
+  color: #1a7f4b;
+}
+
+.resolution-waitlisted .resolution-title {
+  color: #9a6206;
+}
+
+.resolution-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.resolution-prep {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}

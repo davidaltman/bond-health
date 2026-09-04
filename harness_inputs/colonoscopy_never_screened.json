@@ -1,18 +1,21 @@
 {
   "name": "colonoscopy_never_screened",
-  "description": "Screening conversation covering the four Phase 1 acceptance cases: an explicit stated negative, a self-correction, a restatement, and hesitation resolving into an explicit request.",
+  "description": "Happy path. Stated negative, a self-correction, a restatement, symptoms cleared, then an explicit request. Should end in a real booking.",
   "patientName": "Ellen",
   "patientAge": 53,
   "turns": [
     { "role": "agent", "content": "Hi Ellen, I'm Daphne. What's on your mind today?" },
     {
       "role": "user",
-      "content": "My doctor keeps bringing up a colonoscopy and honestly I keep putting it off."
+      "content": "My doctor keeps bringing up a colonoscopy and honestly I keep putting it off.",
+      "expectOutcome": "ASK"
     },
     { "role": "agent", "content": "That's really common. Have you ever had one before?" },
     {
       "role": "user",
-      "content": "No, never. I've never had a colonoscopy or any of those stool tests."
+      "content": "No, never. I've never had a colonoscopy or any of those stool tests.",
+      "expectOutcome": "ASK",
+      "expectGate": "sufficiency"
     },
     { "role": "agent", "content": "Got it. Has anyone in your family had colon cancer or polyps?" },
     {
@@ -27,15 +30,33 @@
       "role": "user",
       "content": "Actually wait, I need to correct that. He was 52, not 60. I was mixing it up with my uncle."
     },
-    { "role": "agent", "content": "Thanks for catching that. Anything else going on health-wise?" },
     {
-      "role": "user",
-      "content": "Nothing major. Like I said I've never been screened, so I don't really know what to expect and the prep sounds awful."
+      "role": "agent",
+      "content": "Thanks for catching that. Before I set anything up — any bleeding, unexplained weight loss, or changes in your bowel habits?"
     },
-    { "role": "agent", "content": "The prep is the part most people dislike. Would it help to talk through what it involves?" },
     {
       "role": "user",
-      "content": "You know what, I've been putting this off long enough. Can you just get it scheduled for me?"
+      "content": "No, nothing like that. No bleeding, no weight loss, everything's normal that way."
+    },
+    {
+      "role": "agent",
+      "content": "Good. Given your father's history you're due for screening. Would you like me to find you an appointment?"
+    },
+    {
+      "role": "user",
+      "content": "You know what, I've been putting this off long enough. Yes, please book it for me.",
+      "expectOutcome": "ACT",
+      "expectGate": "act"
     }
-  ]
+  ],
+  "expect": {
+    "finalOutcome": "ACT",
+    "neverOutcome": ["HANDOFF", "STOP"],
+    "confirmationId": true,
+    "facts": [
+      { "subject": "self", "match": "colonoscop", "status": "never" },
+      { "subject": "father", "match": "colon cancer", "onsetAge": 52 }
+    ],
+    "noFacts": [{ "subject": "father", "match": "colon cancer", "onsetAge": 60 }]
+  }
 }

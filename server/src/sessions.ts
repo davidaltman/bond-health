@@ -17,6 +17,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { extractTurn } from "./extract-turn.js";
+import { decide, type Decision } from "./decide.js";
+import { scheduleScreening, type SchedulingResult } from "./scheduler.js";
 import {
   applyOperations,
   createLedger,
@@ -38,9 +40,16 @@ export interface SessionTurn {
 export interface TraceEvent {
   turn: number;
   at: string;
-  kind: "turn_received" | "operations_applied" | "extraction_failed" | "extraction_skipped";
+  kind:
+    | "turn_received"
+    | "operations_applied"
+    | "extraction_failed"
+    | "extraction_skipped"
+    | "decision"
+    | "resolution";
   detail: string;
   applied?: AppliedOperation[];
+  decision?: Decision;
 }
 
 export interface Session {
@@ -52,6 +61,12 @@ export interface Session {
   ledger: LedgerState;
   signals: ConversationSignals | null;
   trace: TraceEvent[];
+  /** One entry per patient turn: the outcome, the gate that fired, and why. */
+  decisions: Decision[];
+  /** The resolution, once ACT has produced one. */
+  resolution: SchedulingResult | null;
+  /** How often each slot has been asked for, so the engine can stop looping. */
+  askCounts: Record<string, number>;
   /** Serializes extraction so turns apply in spoken order. */
   queue: Promise<void>;
 }
@@ -68,6 +83,9 @@ export function createSession(patientName?: string | null, patientAge?: number |
     ledger: createLedger(),
     signals: null,
     trace: [],
+    decisions: [],
+    resolution: null,
+    askCounts: {},
     queue: Promise.resolve(),
   };
   sessions.set(session.id, session);
@@ -83,6 +101,8 @@ export interface TurnResult {
   applied: AppliedOperation[];
   facts: ClinicalFact[];
   signals: ConversationSignals | null;
+  decision: Decision | null;
+  resolution: SchedulingResult | null;
 }
 
 /**
@@ -123,6 +143,8 @@ export async function appendTurn(
       applied: [],
       facts: liveFacts(session.ledger),
       signals: session.signals,
+      decision: session.decisions.at(-1) ?? null,
+      resolution: session.resolution,
     };
   }
 
@@ -150,6 +172,8 @@ export async function appendTurn(
         detail: applied.length ? summarizeApplied(applied) : "no changes to the record",
         applied,
       });
+
+      runDecision(session, turn.index);
     } catch (error) {
       session.trace.push({
         turn: turn.index,
@@ -169,7 +193,71 @@ export async function appendTurn(
     applied,
     facts: liveFacts(session.ledger),
     signals: session.signals,
+    decision: session.decisions.at(-1) ?? null,
+    resolution: session.resolution,
   };
+}
+
+/**
+ * Runs the gates against current state and, when the outcome is ACT, carries it
+ * out.
+ *
+ * ACT is the only outcome with a side effect, and it happens here rather than
+ * inside decide() so that deciding stays a pure function of state -- the eval
+ * suite can assert on decisions without booking anything, and a reviewer can
+ * replay the gates without touching the scheduler.
+ */
+function runDecision(session: Session, turn: number): void {
+  const decision = decide({
+    turn,
+    patientAge: session.patientAge,
+    facts: liveFacts(session.ledger),
+    signals: session.signals,
+    alreadyBooked: session.resolution?.status === "booked",
+    askCounts: session.askCounts,
+  });
+
+  if (decision.missingSlot) {
+    session.askCounts[decision.missingSlot] = (session.askCounts[decision.missingSlot] ?? 0) + 1;
+  }
+
+  if (decision.outcome === "ACT" && decision.recommendation) {
+    const result = scheduleScreening(decision.recommendation.bookWithinDays);
+    session.resolution = result;
+    decision.say =
+      result.status === "booked"
+        ? `You're booked: ${formatSlot(result.booking.slot)}. Your confirmation number is ` +
+          `${result.booking.confirmationId}, and I'll send the prep instructions over. ` +
+          `${result.booking.prepInstructions[0]}`
+        : `I couldn't get you in inside the window I'd want for you — ${result.reason} ${result.nextStep}`;
+    session.trace.push({
+      turn,
+      at: new Date().toISOString(),
+      kind: "resolution",
+      detail:
+        result.status === "booked"
+          ? `booked ${result.booking.confirmationId} at ${result.booking.slot.clinic}`
+          : `waitlisted ${result.waitlistId}: ${result.reason}`,
+    });
+  }
+
+  session.decisions.push(decision);
+  session.trace.push({
+    turn,
+    at: new Date().toISOString(),
+    kind: "decision",
+    detail: `${decision.outcome} via ${decision.gate}: ${decision.reason}`,
+    decision,
+  });
+}
+
+function formatSlot(slot: { clinic: string; startsAt: string }): string {
+  const when = new Date(slot.startsAt);
+  return `${slot.clinic} on ${when.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  })} at ${when.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
 }
 
 function summarizeApplied(applied: AppliedOperation[]): string {

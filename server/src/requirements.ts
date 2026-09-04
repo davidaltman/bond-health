@@ -1,0 +1,324 @@
+/**
+ * The controlled vocabulary the decision engine queries, and the physician-
+ * authored guideline it applies.
+ *
+ * Facts arrive with a free-text `attribute` the model chose: across runs the
+ * same statement produced "colonoscopy", "stool tests", "colon cancer". If the
+ * gates matched on those strings directly they would pass in testing and fail
+ * intermittently in production, which is the same failure already hit twice in
+ * Phase 1 (subject vocabulary, and relative-condition category). Both times the
+ * fix was to stop asking the model and decide in code, so that is what happens
+ * here: free-text attributes resolve into a small fixed set of slots, and the
+ * gates only ever speak in slots.
+ *
+ * The guideline table below is hardcoded and physician-authored. The model
+ * decides which facts are true; it never decides what the medically correct
+ * screening age is, and it never writes patient-facing clinical wording.
+ */
+import type { ClinicalFact, FactStatus } from "./ledger.js";
+
+export type Slot =
+  | "colonoscopy_screening"
+  | "alternative_screening"
+  | "colorectal_cancer_family_history"
+  | "colon_polyps"
+  | "rectal_bleeding"
+  | "unexplained_weight_loss"
+  | "bowel_habit_change"
+  | "iron_deficiency_anemia";
+
+/** Slots that mean "this may not be routine screening". */
+export const RED_FLAG_SLOTS: Slot[] = [
+  "rectal_bleeding",
+  "unexplained_weight_loss",
+  "bowel_habit_change",
+  "iron_deficiency_anemia",
+];
+
+interface SlotMatcher {
+  slot: Slot;
+  /** Whose fact this can be. Keeps "my father had colon cancer" out of the
+   *  patient's own condition slots. */
+  subject: "self" | "relative";
+  pattern: RegExp;
+}
+
+const SLOT_MATCHERS: SlotMatcher[] = [
+  { slot: "colonoscopy_screening", subject: "self", pattern: /colonoscop|colon scope|sigmoidoscop/i },
+  {
+    slot: "alternative_screening",
+    subject: "self",
+    pattern: /stool test|stool sample|fit test|\bfit\b|cologuard|fecal|occult blood|\bfobt\b/i,
+  },
+  {
+    slot: "colorectal_cancer_family_history",
+    subject: "relative",
+    pattern: /colon cancer|colorectal|bowel cancer|rectal cancer|colon polyp/i,
+  },
+  { slot: "colon_polyps", subject: "self", pattern: /polyp/i },
+  {
+    slot: "rectal_bleeding",
+    subject: "self",
+    pattern: /rectal bleed|blood in (the |my )?stool|bloody stool|blood when|hematochezia|bleeding from/i,
+  },
+  {
+    slot: "unexplained_weight_loss",
+    subject: "self",
+    pattern: /weight loss|losing weight|lost weight|dropped weight/i,
+  },
+  {
+    slot: "bowel_habit_change",
+    subject: "self",
+    pattern: /bowel habit|change in (my )?bowel|constipat|diarrh|narrow stool|stool.*(chang|thin)/i,
+  },
+  { slot: "iron_deficiency_anemia", subject: "self", pattern: /anemi|anaemi|iron deficien|low iron/i },
+];
+
+/** Which slot, if any, a fact fills. */
+export function slotForFact(fact: ClinicalFact): Slot | null {
+  const haystack = `${fact.attribute} ${fact.value}`;
+  const isSelf = fact.subject === "self";
+  for (const matcher of SLOT_MATCHERS) {
+    if (matcher.subject === "self" && !isSelf) continue;
+    if (matcher.subject === "relative" && isSelf) continue;
+    if (matcher.pattern.test(haystack)) return matcher.slot;
+  }
+  return null;
+}
+
+export interface SlotReading {
+  slot: Slot;
+  /** null means the topic has never come up. Crucially different from a fact
+   *  with status "never", which means the patient answered no. */
+  status: FactStatus | null;
+  facts: ClinicalFact[];
+}
+
+export function readSlots(facts: ClinicalFact[]): Map<Slot, SlotReading> {
+  const readings = new Map<Slot, SlotReading>();
+  for (const fact of facts) {
+    const slot = slotForFact(fact);
+    if (!slot) continue;
+    const existing = readings.get(slot);
+    if (!existing) {
+      readings.set(slot, { slot, status: fact.qualifiers.status, facts: [fact] });
+      continue;
+    }
+    existing.facts.push(fact);
+
+    if (RED_FLAG_SLOTS.includes(slot)) {
+      // For symptoms, a current finding outranks an earlier denial: "no
+      // bleeding" then "actually, some blood last week" is a red flag.
+      if (fact.qualifiers.status === "active") existing.status = "active";
+    } else if (existing.status === "unknown" && fact.qualifiers.status !== "unknown") {
+      // For history, only sharpen an unanswered slot. A later vague fact must
+      // not overwrite a definite one -- "patient asked to book a colonoscopy"
+      // arriving as active would otherwise flip "never screened" to "screened",
+      // which is the most dangerous single error this engine could make.
+      existing.status = fact.qualifiers.status;
+    }
+  }
+  return readings;
+}
+
+export function readSlot(readings: Map<Slot, SlotReading>, slot: Slot): SlotReading {
+  return readings.get(slot) ?? { slot, status: null, facts: [] };
+}
+
+/**
+ * The topic has come up at all.
+ *
+ * Weaker than it sounds: a fact can exist with status "unknown", which means
+ * the subject was mentioned but not answered ("my doctor keeps bringing up a
+ * colonoscopy" creates a colonoscopy fact that tells us nothing about whether
+ * she's had one).
+ */
+export function isMentioned(reading: SlotReading): boolean {
+  return reading.status !== null;
+}
+
+/**
+ * The patient actually answered.
+ *
+ * This is the gate-relevant one, and it is the Phase 1 never-vs-absent
+ * distinction applied one layer up. "Never had one" is an answer; "we talked
+ * around it" is not. Treating status "unknown" as knowledge is what let an
+ * earlier build book a colonoscopy for someone whose screening history it had
+ * never actually established.
+ */
+export function isAnswered(reading: SlotReading): boolean {
+  return reading.status === "active" || reading.status === "resolved" || reading.status === "never";
+}
+
+/** True when a finding is present, as opposed to known-absent or unasked. */
+export function isPresent(reading: SlotReading): boolean {
+  return reading.status === "active" || reading.status === "resolved";
+}
+
+/**
+ * For history about someone else, the fact existing *is* the finding.
+ *
+ * `status` on a relative's condition describes their course, not whether it
+ * happened -- "my father had colon cancer" often lands as status "unknown"
+ * because nobody said whether he still has it. Requiring `active` there would
+ * silently drop the family history that changes the screening age. Only an
+ * explicit "nobody in my family" (status "never") means absent.
+ */
+export function isAffirmative(reading: SlotReading): boolean {
+  return reading.status !== null && reading.status !== "never";
+}
+
+// ---------------------------------------------------------------------------
+// Guideline. Hardcoded on purpose.
+// ---------------------------------------------------------------------------
+
+/**
+ * Colorectal cancer screening thresholds, following USPSTF/ACS-style guidance:
+ * average risk begins at 45; a first-degree relative with colorectal cancer
+ * moves the start to age 40, or ten years before that relative's diagnosis,
+ * whichever comes first.
+ *
+ * This is a demo table, not a clinical product. It is hardcoded rather than
+ * generated so the recommendation is reproducible and reviewable -- a model
+ * that re-derives the start age each call will eventually derive it wrong.
+ */
+export const SCREENING_GUIDELINE = {
+  averageRiskStartAge: 45,
+  familyHistoryFloorAge: 40,
+  familyHistoryLeadYears: 10,
+  /** Interval for a normal average-risk result. Used in patient-facing copy. */
+  averageRiskIntervalYears: 10,
+  familyHistoryIntervalYears: 5,
+} as const;
+
+/**
+ * How soon this should land, as a function of how overdue the patient is.
+ *
+ * Someone two years past their start age and someone twenty years past are not
+ * the same clinical problem, and collapsing them into one "book sometime"
+ * window is how a scheduler ends up looking competent while quietly deferring
+ * the person who needed it most. The tightest tier is deliberately shorter than
+ * the mock clinic's lead time, so the waitlist path is reachable by a real
+ * patient profile rather than by a failure injection.
+ */
+function bookingWindowDays(yearsOverdue: number, elevatedRisk: boolean): number {
+  if (yearsOverdue >= 15 && elevatedRisk) return 14;
+  if (yearsOverdue >= 5) return 30;
+  return 90;
+}
+
+export interface ScreeningRecommendation {
+  indicated: boolean;
+  startAge: number;
+  intervalYears: number;
+  riskTier: "average" | "elevated_family_history";
+  /** How urgently this should land, which is what makes the scheduler's
+   *  unhappy path reachable. */
+  bookWithinDays: number;
+  rationale: string;
+}
+
+export function recommendScreening(
+  patientAge: number,
+  familyHistory: SlotReading,
+): ScreeningRecommendation {
+  const hasFamilyHistory = isAffirmative(familyHistory);
+  if (!hasFamilyHistory) {
+    return {
+      indicated: patientAge >= SCREENING_GUIDELINE.averageRiskStartAge,
+      startAge: SCREENING_GUIDELINE.averageRiskStartAge,
+      intervalYears: SCREENING_GUIDELINE.averageRiskIntervalYears,
+      riskTier: "average",
+      bookWithinDays: bookingWindowDays(patientAge - SCREENING_GUIDELINE.averageRiskStartAge, false),
+      rationale: `Average risk: screening begins at ${SCREENING_GUIDELINE.averageRiskStartAge}.`,
+    };
+  }
+
+  // Ten years before the relative's diagnosis, floored at 40.
+  const relativeAges = familyHistory.facts
+    .map((fact) => fact.qualifiers.onsetAge)
+    .filter((age): age is number => typeof age === "number");
+  const earliestDiagnosis = relativeAges.length ? Math.min(...relativeAges) : null;
+  const leadAge =
+    earliestDiagnosis != null ? earliestDiagnosis - SCREENING_GUIDELINE.familyHistoryLeadYears : null;
+  const startAge =
+    leadAge != null
+      ? Math.min(SCREENING_GUIDELINE.familyHistoryFloorAge, leadAge)
+      : SCREENING_GUIDELINE.familyHistoryFloorAge;
+
+  const rationale =
+    earliestDiagnosis != null
+      ? `First-degree relative diagnosed at ${earliestDiagnosis}: screening begins at ${startAge} ` +
+        `(${SCREENING_GUIDELINE.familyHistoryLeadYears} years earlier, floored at ${SCREENING_GUIDELINE.familyHistoryFloorAge}).`
+      : `Family history of colorectal cancer: screening begins at ${SCREENING_GUIDELINE.familyHistoryFloorAge}.`;
+
+  return {
+    indicated: patientAge >= startAge,
+    startAge,
+    intervalYears: SCREENING_GUIDELINE.familyHistoryIntervalYears,
+    riskTier: "elevated_family_history",
+    bookWithinDays: bookingWindowDays(patientAge - startAge, true),
+    rationale,
+  };
+}
+
+/** Red flags the patient currently has. Any one of these means this is not a
+ *  routine screening question anymore. */
+export function activeRedFlags(readings: Map<Slot, SlotReading>): SlotReading[] {
+  return RED_FLAG_SLOTS.map((slot) => readSlot(readings, slot)).filter(
+    (reading) => reading.status === "active",
+  );
+}
+
+/**
+ * Whether symptoms have been addressed at all.
+ *
+ * Satisfied by an answer to *any* red flag, not all of them. Requiring each one
+ * separately would turn this into the intake questionnaire the brief explicitly
+ * argues against: one "any bleeding, weight loss, or changes in bowel habits?"
+ * covers the family, and the answer -- yes or no -- makes the topic known.
+ */
+export function redFlagsAddressed(readings: Map<Slot, SlotReading>): boolean {
+  return RED_FLAG_SLOTS.some((slot) => isAnswered(readSlot(readings, slot)));
+}
+
+export const RED_FLAG_QUESTION =
+  "Before I set anything up — any bleeding, unexplained weight loss, or changes in your bowel habits?";
+
+/**
+ * What must be known before a screening colonoscopy can be booked.
+ *
+ * Deliberately short. The brief asks for the fewest steps to resolution, so
+ * this is the minimum set that changes the decision, not an intake form.
+ * Ordered by value, which is the order ASK will walk.
+ */
+export interface Requirement {
+  slot: Slot;
+  question: string;
+  why: string;
+  /**
+   * `answer` — the patient must have actually said yes or no.
+   * `mention` — the topic existing is enough, because for family history the
+   * fact's presence is the finding and its status describes the relative.
+   */
+  satisfiedBy: "answer" | "mention";
+}
+
+export const REQUIRED_SLOTS: Requirement[] = [
+  {
+    slot: "colonoscopy_screening",
+    question: "Have you ever had a colonoscopy before?",
+    why: "Prior screening determines whether anything is due at all.",
+    satisfiedBy: "answer",
+  },
+  {
+    slot: "colorectal_cancer_family_history",
+    question: "Has anyone in your immediate family had colon cancer or polyps?",
+    why: "A first-degree relative moves the start age and shortens the interval.",
+    satisfiedBy: "mention",
+  },
+];
+
+export function isSatisfied(requirement: Requirement, reading: SlotReading): boolean {
+  return requirement.satisfiedBy === "answer" ? isAnswered(reading) : isMentioned(reading);
+}

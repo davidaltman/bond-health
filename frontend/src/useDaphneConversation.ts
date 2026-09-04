@@ -5,6 +5,8 @@ import type {
   CallStatus,
   ClinicalFact,
   ConversationSignals,
+  Decision,
+  Resolution,
   SummarizeTranscriptTurn,
   TranscriptEntry,
   TranscriptRole,
@@ -31,6 +33,8 @@ export function useDaphneConversation(
   // Live clinical memory, maintained server-side while the call runs.
   const [facts, setFacts] = useState<ClinicalFact[]>([]);
   const [signals, setSignals] = useState<ConversationSignals | null>(null);
+  const [decision, setDecision] = useState<Decision | null>(null);
+  const [resolution, setResolution] = useState<Resolution | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   // Turns are chained rather than fired in parallel, so a slow extraction can't
   // let a later turn overtake the one it depends on.
@@ -50,6 +54,8 @@ export function useDaphneConversation(
         const result = await postTurn(sessionId, role, text);
         setFacts(result.facts);
         if (result.signals) setSignals(result.signals);
+        if (result.decision) setDecision(result.decision);
+        setResolution(result.resolution);
       })
       .catch((error) => {
         // eslint-disable-next-line no-console
@@ -63,6 +69,8 @@ export function useDaphneConversation(
       setTranscript([]);
       setFacts([]);
       setSignals(null);
+      setDecision(null);
+      setResolution(null);
       sessionIdRef.current = null;
       turnQueueRef.current = Promise.resolve();
       setStatus("connecting");
@@ -132,7 +140,20 @@ export function useDaphneConversation(
     sessionIdRef.current = null;
     setFacts([]);
     setSignals(null);
+    setDecision(null);
+    setResolution(null);
   }, []);
 
-  return { status, transcript, errorMessage, facts, signals, start, stop, loadHistoricalTranscript };
+  return {
+    status,
+    transcript,
+    errorMessage,
+    facts,
+    signals,
+    decision,
+    resolution,
+    start,
+    stop,
+    loadHistoricalTranscript,
+  };
 }

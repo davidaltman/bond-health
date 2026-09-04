@@ -118,8 +118,39 @@ export interface ConversationSignals {
   hesitation: "none" | "mild" | "strong";
   readiness: "not_raised" | "exploring" | "ambivalent" | "ready" | "explicit_request";
   verbosity: "brief" | "normal" | "detailed";
+  requestType: "none" | "information" | "action" | "clinical_judgment";
   sensitiveTopics: string[];
 }
+
+export type Outcome = "ACT" | "ASK" | "STOP" | "HANDOFF";
+
+export interface Decision {
+  turn: number;
+  outcome: Outcome;
+  gate: string;
+  reason: string;
+  missingSlot: string | null;
+  say: string;
+  evidence: string[];
+  recommendation: {
+    indicated: boolean;
+    startAge: number;
+    riskTier: "average" | "elevated_family_history";
+    bookWithinDays: number;
+    rationale: string;
+  } | null;
+}
+
+export type Resolution =
+  | {
+      status: "booked";
+      booking: {
+        confirmationId: string;
+        slot: { clinic: string; startsAt: string; daysOut: number };
+        prepInstructions: string[];
+      };
+    }
+  | { status: "waitlisted"; waitlistId: string; reason: string; nextStep: string };
 
 export interface TurnResult {
   turnIndex: number;
@@ -131,4 +162,6 @@ export interface TurnResult {
   }>;
   facts: ClinicalFact[];
   signals: ConversationSignals | null;
+  decision: Decision | null;
+  resolution: Resolution | null;
 }

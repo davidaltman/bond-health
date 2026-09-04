@@ -174,6 +174,9 @@ app.get("/api/session/:id", async (req, res) => {
     facts: liveFacts(session.ledger),
     allFacts: session.ledger.facts,
     signals: session.signals,
+    decisions: session.decisions,
+    decision: session.decisions.at(-1) ?? null,
+    resolution: session.resolution,
     trace: session.trace,
   });
 });

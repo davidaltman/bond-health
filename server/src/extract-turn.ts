@@ -19,6 +19,7 @@ import {
   CONFIDENCES,
   HESITATIONS,
   READINESS_LEVELS,
+  REQUEST_TYPES,
   TONES,
   VERBOSITIES,
   type ConversationSignals,
@@ -54,7 +55,10 @@ adds nothing to the record, return an empty operations list -- that is a normal
 and common outcome.
 
 Refer to the patient as subject "self", and to relatives by relation
-("mother", "father", "uncle"), never by name.
+("mother", "father", "uncle"), never by name. Use subject "family" for a
+statement about the family collectively, including a denial: "nobody in my
+family has had colon cancer" is subject "family" with status "never", not a
+fact about the patient.
 
 attribute is a short canonical key, lowercase, no dates or ages inside it:
 "colonoscopy", "rosacea", "doxycycline", "wrist numbness". value is the readable
@@ -73,6 +77,17 @@ STATUS -- read this carefully, it is the field most often gotten wrong.
 "never" -- it is real information, not an absence. Do not invent a "never" fact
 for a topic simply because it has not come up.
 
+DENIALS ARE FACTS. If Daphne just asked about something and the patient says no,
+you must record it. "No bleeding, no weight loss, nothing like that" in answer
+to a symptom question is three separate "add" operations with status "never",
+not an empty operations list. Returning nothing there loses the answer and
+Daphne will ask again. Answering a question about several things at once
+produces one operation per thing.
+
+A request is not a fact. "Can you book it for me" tells us what the patient
+wants, which is carried by request_type below, and must not become a clinical
+fact about a procedure they have had.
+
 SIGNALS
 
 Report how the patient sounds in this reply, not what they said.
@@ -87,6 +102,17 @@ requesting:
 
 Do not report explicit_request unless the patient actually asked for the action.
 Hesitation and agreement in the same turn is ambivalent, not ready.
+
+request_type is what the patient is asking of us in this turn:
+  none              they are answering or sharing, not asking
+  information       a factual or logistical question ("how long does it take?")
+  action            asking us to do something ("book it", "send me that")
+  clinical_judgment asking for a diagnosis, an interpretation of a symptom or
+                    result, a medication or dose, or whether they should be
+                    worried
+
+Report clinical_judgment whenever the honest answer would require medical
+judgement about this specific patient, even if it is phrased casually.
 
 Output only JSON matching the schema.`;
 
@@ -137,9 +163,10 @@ const TURN_JSON_SCHEMA = {
         hesitation: { type: "string", enum: HESITATIONS },
         readiness: { type: "string", enum: READINESS_LEVELS },
         verbosity: { type: "string", enum: VERBOSITIES },
+        request_type: { type: "string", enum: REQUEST_TYPES },
         sensitive_topics: { type: "array", items: { type: "string" } },
       },
-      required: ["tone", "hesitation", "readiness", "verbosity", "sensitive_topics"],
+      required: ["tone", "hesitation", "readiness", "verbosity", "request_type", "sensitive_topics"],
     },
   },
   required: ["operations", "signals"],
@@ -165,6 +192,7 @@ interface RawTurnExtraction {
     hesitation: string;
     readiness: string;
     verbosity: string;
+    request_type: string;
     sensitive_topics: string[];
   };
 }
@@ -239,6 +267,7 @@ export async function extractTurn(input: ExtractTurnInput): Promise<TurnExtracti
       hesitation: pick(raw.signals?.hesitation ?? "", HESITATIONS, "none"),
       readiness: pick(raw.signals?.readiness ?? "", READINESS_LEVELS, "not_raised"),
       verbosity: pick(raw.signals?.verbosity ?? "", VERBOSITIES, "normal"),
+      requestType: pick(raw.signals?.request_type ?? "", REQUEST_TYPES, "none"),
       sensitiveTopics: Array.isArray(raw.signals?.sensitive_topics) ? raw.signals.sensitive_topics : [],
     },
   };

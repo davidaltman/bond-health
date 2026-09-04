@@ -1,0 +1,39 @@
+{
+  "name": "no_slots_waitlist",
+  "description": "Unhappy resolution path. Elevated risk and decades overdue puts the clinical window inside the clinic's lead time, so there is nothing to book. Must still resolve — waitlist plus a concrete next step — rather than apologize.",
+  "patientName": "Ruth",
+  "patientAge": 68,
+  "turns": [
+    { "role": "agent", "content": "Hi Ruth, I'm Daphne. What can I help with?" },
+    {
+      "role": "user",
+      "content": "I'm 68 and I've never had a colonoscopy. I know, I know."
+    },
+    { "role": "agent", "content": "Has anyone in your family had colon cancer or polyps?" },
+    {
+      "role": "user",
+      "content": "My mother had colon cancer. She was only 45 when she was diagnosed."
+    },
+    { "role": "agent", "content": "Any bleeding, weight loss, or changes in bowel habits?" },
+    { "role": "user", "content": "No, none of that at all. I feel well." },
+    {
+      "role": "agent",
+      "content": "Given your mother's history you're significantly overdue. Would you like me to find you an appointment?"
+    },
+    {
+      "role": "user",
+      "content": "Yes, please book me in as soon as you possibly can.",
+      "expectOutcome": "ACT",
+      "expectGate": "act"
+    }
+  ],
+  "expect": {
+    "finalOutcome": "ACT",
+    "neverOutcome": ["STOP", "HANDOFF"],
+    "resolution": "waitlisted",
+    "facts": [
+      { "subject": "self", "match": "colonoscop", "status": "never" },
+      { "subject": "mother", "match": "colon cancer", "onsetAge": 45 }
+    ]
+  }
+}

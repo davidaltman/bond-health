@@ -191,9 +191,9 @@ prompt. Prompts tune tone; structure enforces behavior. (Full incident write-up:
 |---|---|---|---|
 | 0 | Repo hygiene, provider wiring, runnable skeleton | 0.5h | done |
 | 1 | Fact ledger + signals + per-turn incremental extraction | 2.0h | done — [spec](docs/phase-1-spec.md), 7/7 acceptance |
-| 2 | Decision engine: gates, four outcomes, decision log | 2.5h | next |
-| 3 | Mock scheduling + resolution, including the unhappy path | 1.5h | |
-| 4 | Daphne conversation layer + tone/readiness policy | 1.0h | |
+| 2 | Decision engine: gates, four outcomes, decision log | 2.5h | done — 5 scenarios, 53/53 |
+| 3 | Mock scheduling + resolution, including the unhappy path | 1.5h | done — booking + waitlist |
+| 4 | Daphne conversation layer + tone/readiness policy | 1.0h | next |
 | 5 | Session Review pane (real-time signal) | 1.5h | |
 | 6 | Eval runner + ~8 scenario cases | 1.0h | |
 |   | **Total** | **10.0h** | |
@@ -286,9 +286,22 @@ No microphone needed — this drives the live session endpoints from a scripted 
 asserts on the resulting ledger.
 
 ```bash
-node scripts/replay_session.mjs harness_inputs/colonoscopy_never_screened.json
+node scripts/replay_session.mjs harness_inputs/*.json
 ```
 
-It prints each turn's ledger operations and signals, the final fact table, and the acceptance
-checks. Exit code is non-zero if any check fails, so it works as a gate. Roughly one small model
-call per patient turn, 1–5s each, all off the conversational path.
+It prints each turn's ledger operations, signals, and decision, then the final fact table,
+resolution, and acceptance checks. Exit code is non-zero if any check fails, so it works as a gate.
+Roughly one small model call per patient turn, 1–5s each, all off the conversational path.
+
+Five scenarios, 53 assertions, one per gate:
+
+| Scenario | Asserts |
+|---|---|
+| `colonoscopy_never_screened` | happy path — stated negative, self-correction, booking with a confirmation id |
+| `red_flag_bleeding` | safety outranks an explicit booking request → HANDOFF, never ACT |
+| `ambivalent_patient` | complete facts are not consent → ASK via readiness, never ACT |
+| `out_of_scope_dosing` | a warfarin dosing question → STOP, whatever else is true |
+| `no_slots_waitlist` | clinical window inside the clinic's lead time → waitlist with a next step |
+
+Assertions are on decisions and state, never on wording. Scenarios declare their own expectations,
+so a new case is a JSON file rather than a code change.

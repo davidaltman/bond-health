@@ -95,12 +95,23 @@ export const READINESS_LEVELS: Readiness[] = [
 export type Verbosity = "brief" | "normal" | "detailed";
 export const VERBOSITIES: Verbosity[] = ["brief", "normal", "detailed"];
 
+/**
+ * What the patient is asking of us this turn.
+ *
+ * `clinical_judgment` is the one that matters: a request to diagnose, interpret
+ * a result, or advise on dosing is outside what this agent may answer however
+ * complete the record is, and routes to STOP rather than to a better answer.
+ */
+export type RequestType = "none" | "information" | "action" | "clinical_judgment";
+export const REQUEST_TYPES: RequestType[] = ["none", "information", "action", "clinical_judgment"];
+
 export interface ConversationSignals {
   turn: number;
   tone: Tone;
   hesitation: Hesitation;
   readiness: Readiness;
   verbosity: Verbosity;
+  requestType: RequestType;
   sensitiveTopics: string[];
 }
 
@@ -167,6 +178,9 @@ const SUBJECT_ALIASES: Record<string, string> = {
   myself: "self",
   "the patient": "self",
   user: "self",
+  family: "family",
+  "my family": "family",
+  relatives: "family",
   mom: "mother",
   mum: "mother",
   mother: "mother",
@@ -181,6 +195,24 @@ const SUBJECT_ALIASES: Record<string, string> = {
 export function canonicalSubject(subject: string): string {
   const normalized = normalizeToken(subject).replace(/^my\s+/, "");
   return SUBJECT_ALIASES[normalized] ?? normalized ?? "self";
+}
+
+/**
+ * "Nobody in my family has had colon cancer" is a fact about the family, but it
+ * arrives attributed to the patient, because grammatically the patient is the
+ * one speaking and no relation is named.
+ *
+ * That misattribution is expensive: the family-history slot stays empty, the
+ * gate keeps asking a question that was already answered, and the answer that
+ * was given gets filed as a claim about the patient's own body. Since the
+ * source quote is verbatim by construction, the collective phrasing is right
+ * there to key off, so this is decided in code rather than hoped for.
+ */
+const FAMILY_SCOPE = /\b(no[\s-]?one|nobody|none of (them|us|my)|anyone)\b[^.?!]*\bfamily\b|\bmy family\b/i;
+
+function inferFamilyScope(subject: string, sourceQuote: string): string {
+  if (subject !== "self") return subject;
+  return FAMILY_SCOPE.test(sourceQuote) ? "family" : subject;
 }
 
 /** Identity key. Two statements about the same attribute of the same person are
@@ -259,7 +291,7 @@ export function applyOperations(
     const quote = (operation.sourceQuote || "").trim();
 
     if (operation.op === "add") {
-      const subject = canonicalSubject(operation.subject || "self") || "self";
+      const subject = inferFamilyScope(canonicalSubject(operation.subject || "self") || "self", quote);
       const attribute = (operation.attribute || "").trim();
       if (!attribute || !quote) {
         applied.push({

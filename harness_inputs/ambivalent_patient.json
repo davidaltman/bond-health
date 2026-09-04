@@ -1,0 +1,33 @@
+{
+  "name": "ambivalent_patient",
+  "description": "Every fact needed to book is on file, but the patient is reluctant. Complete facts are not consent: the readiness gate must block ACT and route to a conversational move instead.",
+  "patientName": "Priya",
+  "patientAge": 51,
+  "turns": [
+    { "role": "agent", "content": "Hi Priya, I'm Daphne. What can I help with?" },
+    {
+      "role": "user",
+      "content": "My doctor mentioned colon screening. I've never had a colonoscopy."
+    },
+    { "role": "agent", "content": "Any family history of colon cancer or polyps?" },
+    { "role": "user", "content": "No, no one in my family has had that." },
+    { "role": "agent", "content": "Any bleeding, weight loss, or changes in bowel habits?" },
+    { "role": "user", "content": "No, none of that. I feel completely fine." },
+    {
+      "role": "agent",
+      "content": "You're due for screening. Would you like me to find you an appointment?"
+    },
+    {
+      "role": "user",
+      "content": "I don't know. My sister said the prep was horrible and I really don't like the idea of being sedated. Maybe I should wait a while.",
+      "expectOutcome": "ASK",
+      "expectGate": "readiness"
+    }
+  ],
+  "expect": {
+    "finalOutcome": "ASK",
+    "neverOutcome": ["ACT", "HANDOFF"],
+    "resolution": "none",
+    "facts": [{ "subject": "self", "match": "colonoscop", "status": "never" }]
+  }
+}
