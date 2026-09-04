@@ -20,7 +20,7 @@ import { extractHealthEvents, buildAgeTimeline, type TranscriptTurn } from "./ti
 import { generateFollowUps } from "./followups.js";
 import { BOND_AGENTS, DEFAULT_AGENT_ID } from "./agents.js";
 import { fetchConversationTranscript } from "./conversations.js";
-import { appendTurn, createSession, getSession, settle } from "./sessions.js";
+import { appendTurn, createSession, exchange, getSession, settle } from "./sessions.js";
 import { liveFacts } from "./ledger.js";
 
 const PORT = Number(process.env.PORT || 8790);
@@ -153,6 +153,28 @@ app.post("/api/session/:id/turn", async (req, res) => {
   try {
     const result = await appendTurn(session, role, content);
     res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// The text path: one call in, Daphne's decision-driven reply out. This is the
+// primary medium (see README "text-first, voice adapter behind it") because it
+// is the only one where the agent's next sentence is genuinely a consequence of
+// the gates rather than a parallel commentary on them.
+app.post("/api/session/:id/message", async (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: `No session ${req.params.id}` });
+    return;
+  }
+  const content = String(req.body?.content ?? "").trim();
+  if (!content) {
+    res.status(400).json({ error: "content is required" });
+    return;
+  }
+  try {
+    res.json(await exchange(session, content));
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }

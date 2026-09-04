@@ -62,7 +62,11 @@ export function LiveFactsPanel({
               {subjectFacts.map((fact) => (
                 <div key={fact.id} className="live-fact" title={`"${fact.sourceQuote}"`}>
                   <div className="live-fact-head">
-                    <span className="live-fact-value">{fact.value}</span>
+                    {/* The attribute, not the value: three denials in one turn
+                        all come back with a value like "none reported", which
+                        renders as three identical rows. The canonical key is
+                        what distinguishes them, and it is what the gates read. */}
+                    <span className="live-fact-value">{fact.attribute}</span>
                     <span className={`live-fact-status live-fact-status-${fact.qualifiers.status}`}>
                       {STATUS_LABEL[fact.qualifiers.status]}
                     </span>

@@ -18,6 +18,7 @@
 import { randomUUID } from "node:crypto";
 import { extractTurn } from "./extract-turn.js";
 import { decide, type Decision } from "./decide.js";
+import { composeReply, type ComposedReply } from "./compose.js";
 import { scheduleScreening, type SchedulingResult } from "./scheduler.js";
 import {
   applyOperations,
@@ -270,4 +271,39 @@ function summarizeApplied(applied: AppliedOperation[]): string {
  *  last turn the patient spoke. */
 export async function settle(session: Session): Promise<void> {
   await session.queue;
+}
+
+export interface ExchangeResult extends TurnResult {
+  reply: ComposedReply;
+}
+
+/**
+ * One full turn of the text conversation: patient speaks, Daphne answers.
+ *
+ * This is where the loop actually closes. In the voice path the agent talks
+ * from its own prompt and the engine watches from the side, which means the
+ * gates audit the conversation rather than steer it. Here Daphne's reply *is*
+ * the decision, so "the patient was told X" and "the system decided X" cannot
+ * drift apart -- and the reply is recorded as an agent turn, so the next
+ * extraction sees the question it is answering.
+ */
+export async function exchange(session: Session, content: string): Promise<ExchangeResult> {
+  const turnResult = await appendTurn(session, "user", content);
+
+  const decision = turnResult.decision;
+  if (!decision) {
+    const reply: ComposedReply = {
+      text: "Sorry — I lost my train of thought there. Could you say that again?",
+      acknowledgment: "",
+      substance: "",
+      guardTripped: "no decision was produced for this turn",
+    };
+    await appendTurn(session, "agent", reply.text);
+    return { ...turnResult, reply };
+  }
+
+  const reply = await composeReply({ decision, signals: session.signals, patientTurn: content });
+  await appendTurn(session, "agent", reply.text);
+
+  return { ...turnResult, reply, resolution: session.resolution };
 }

@@ -228,9 +228,9 @@ export function decide(input: DecisionInput): Decision {
         : `Patient has not asked to proceed (readiness=${readiness}).`,
       missingSlot: "readiness",
       say: ambivalent
-        ? "It sounds like you've got some reservations, and that's fair — plenty of people do. " +
+        ? "Plenty of people feel exactly that way about it, and there's no rush from my side. " +
           "What's the part that puts you off most? I'd rather talk that through than push you."
-        : `You're due for screening — ${recommendation.rationale} Would you like me to find you an appointment?`,
+        : `${recommendation.patientSummary} Would you like me to find you an appointment?`,
     };
   }
 

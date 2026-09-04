@@ -1,0 +1,46 @@
+{
+  "name": "text_mode_full_journey",
+  "mode": "text",
+  "description": "The real product path: only the patient speaks and every Daphne reply is produced by the decision engine. Hesitation must block the booking, and the booking must land once the patient actually asks. Also asserts that authored clinical wording reaches the patient verbatim.",
+  "patientName": "Ellen",
+  "patientAge": 53,
+  "turns": [
+    {
+      "role": "user",
+      "content": "My doctor keeps bringing up a colonoscopy and honestly I keep putting it off.",
+      "expectOutcome": "ASK",
+      "expectGate": "sufficiency"
+    },
+    {
+      "role": "user",
+      "content": "No, never. I've never had a colonoscopy or any of those stool tests."
+    },
+    {
+      "role": "user",
+      "content": "My father had colon cancer. He was 52 when they found it."
+    },
+    {
+      "role": "user",
+      "content": "No bleeding, no weight loss, nothing like that at all."
+    },
+    {
+      "role": "user",
+      "content": "I don't know. My sister said the prep was horrible and I'm nervous about the sedation.",
+      "expectOutcome": "ASK",
+      "expectGate": "readiness"
+    },
+    {
+      "role": "user",
+      "content": "Okay, you've talked me into it. Please go ahead and book it.",
+      "expectOutcome": "ACT",
+      "expectGate": "act"
+    }
+  ],
+  "expect": {
+    "finalOutcome": "ACT",
+    "neverOutcome": ["STOP", "HANDOFF"],
+    "resolution": "booked",
+    "confirmationId": true,
+    "facts": [{ "subject": "self", "match": "colonoscop", "status": "never" }]
+  }
+}

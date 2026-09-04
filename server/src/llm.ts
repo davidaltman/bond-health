@@ -14,7 +14,10 @@ const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 
 export const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+/** "minimal" is rejected by the current default model; the supported floor is
+ *  "none". Kept narrow so a bad value fails at compile time rather than at
+ *  runtime inside a live call. */
+export type ReasoningEffort = "none" | "low" | "medium" | "high";
 
 export interface JsonCompletionOptions {
   system: string;

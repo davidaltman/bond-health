@@ -53,6 +53,61 @@ async function runScenario(file) {
   const checks = [];
   const seenOutcomes = [];
 
+  // Text mode drives the real product path: only the patient speaks, and
+  // Daphne's replies come from the decision engine rather than from a script.
+  // Scripted-agent mode stays available because pinning both sides is the only
+  // way to steer a conversation to a specific gate on demand.
+  if (scenario.mode === "text") {
+    for (const turn of scenario.turns.filter((t) => t.role === "user")) {
+      const started = Date.now();
+      const result = await json(`${SERVER}/api/session/${sessionId}/message`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: turn.content }),
+      });
+      const decision = result.decision;
+      if (decision) seenOutcomes.push(decision.outcome);
+
+      console.log(`patient  ${turn.content}`);
+      for (const applied of result.applied) {
+        console.log(`         · ${applied.outcome} ${applied.factId ?? ""} ${applied.detail}`.trimEnd());
+      }
+      console.log(
+        `         [${decision?.outcome} via ${decision?.gate}]  (${Date.now() - started}ms)`,
+      );
+      console.log(`daphne   ${result.reply.text}\n`);
+
+      if (turn.expectOutcome) {
+        checks.push({
+          name: `"${turn.content.slice(0, 44)}…" → ${turn.expectOutcome}${turn.expectGate ? ` via ${turn.expectGate}` : ""}`,
+          pass:
+            decision?.outcome === turn.expectOutcome &&
+            (!turn.expectGate || decision?.gate === turn.expectGate),
+          got: decision ? `${decision.outcome} via ${decision.gate}` : "no decision",
+        });
+      }
+
+      // The safety property the two-part reply exists to provide: authored
+      // clinical wording reaches the patient character for character, and the
+      // model's contribution is only ever prepended warmth.
+      if (result.reply.substance) {
+        checks.push({
+          name: "authored clinical wording survived verbatim into the reply",
+          pass: result.reply.text.includes(result.reply.substance),
+          got: result.reply.text,
+        });
+      }
+      if (result.reply.acknowledgment) {
+        checks.push({
+          name: "acknowledgment carries no numbers",
+          pass: !/\d/.test(result.reply.acknowledgment),
+          got: result.reply.acknowledgment,
+        });
+      }
+    }
+    return finish(scenario, sessionId, checks, seenOutcomes);
+  }
+
   for (const turn of scenario.turns) {
     const started = Date.now();
     const result = await json(`${SERVER}/api/session/${sessionId}/turn`, {
@@ -96,6 +151,11 @@ async function runScenario(file) {
     }
   }
 
+  return finish(scenario, sessionId, checks, seenOutcomes);
+}
+
+/** Shared reporting and assertions for both replay modes. */
+async function finish(scenario, sessionId, checks, seenOutcomes) {
   const state = await json(`${SERVER}/api/session/${sessionId}`);
   const live = state.facts;
 

@@ -3,14 +3,23 @@ import "./App.css";
 import { AltmanAILogo } from "./components/AltmanAILogo";
 import { CallControls } from "./components/CallControls";
 import { TranscriptPanel } from "./components/TranscriptPanel";
+import { ChatPanel } from "./components/ChatPanel";
 import { LiveFactsPanel } from "./components/LiveFactsPanel";
 import { DecisionPanel } from "./components/DecisionPanel";
 import { SummaryPanel } from "./components/SummaryPanel";
 import { useDaphneConversation } from "./useDaphneConversation";
+import { useTextConversation } from "./useTextConversation";
 import { fetchAgents, summarizeTranscript } from "./api";
 import type { AgentOption, SummarizeResponse } from "./types";
 
+type Medium = "text" | "voice";
+
 export default function App() {
+  // Text is the default because it is the only medium where Daphne's reply is
+  // produced by the decision engine. Voice runs the same ledger and gates, but
+  // the ElevenLabs agent speaks from its own prompt, so there the engine
+  // observes rather than drives -- a distinction worth being able to see.
+  const [medium, setMedium] = useState<Medium>("text");
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [patientName, setPatientName] = useState("David");
@@ -49,6 +58,13 @@ export default function App() {
     stop,
     loadHistoricalTranscript,
   } = useDaphneConversation(dynamicVariables, patient);
+
+  const text = useTextConversation(patient);
+
+  const activeFacts = medium === "text" ? text.facts : facts;
+  const activeSignals = medium === "text" ? text.signals : signals;
+  const activeDecision = medium === "text" ? text.decision : decision;
+  const activeResolution = medium === "text" ? text.resolution : resolution;
 
   useEffect(() => {
     fetchAgents()
@@ -100,7 +116,19 @@ export default function App() {
     <div className="app-shell">
       <header className="app-header">
         <AltmanAILogo size={32} />
-        <div className="app-header-subtitle">Voice health-intake demo</div>
+        <div className="app-header-subtitle">Health intake, from history-taking to resolution</div>
+        <div className="medium-toggle">
+          {(["text", "voice"] as Medium[]).map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={medium === option ? "medium-option medium-option-active" : "medium-option"}
+              onClick={() => setMedium(option)}
+            >
+              {option === "text" ? "Text" : "Voice"}
+            </button>
+          ))}
+        </div>
       </header>
 
       {loadError ? <div className="error-banner app-level-error">{loadError}</div> : null}
@@ -119,12 +147,22 @@ export default function App() {
             onStart={handleStart}
             onStop={stop}
           />
-          <LiveFactsPanel facts={facts} signals={signals} />
+          <LiveFactsPanel facts={activeFacts} signals={activeSignals} />
         </div>
 
         <div className="app-column app-column-center">
-          <TranscriptPanel status={status} transcript={transcript} errorMessage={errorMessage} />
-          <DecisionPanel decision={decision} resolution={resolution} />
+          {medium === "text" ? (
+            <ChatPanel
+              transcript={text.transcript}
+              isThinking={text.isThinking}
+              errorMessage={text.errorMessage}
+              onSend={(message) => void text.send(message)}
+              onReset={text.reset}
+            />
+          ) : (
+            <TranscriptPanel status={status} transcript={transcript} errorMessage={errorMessage} />
+          )}
+          <DecisionPanel decision={activeDecision} resolution={activeResolution} />
         </div>
 
         <div className="app-column app-column-right">

@@ -215,7 +215,16 @@ export interface ScreeningRecommendation {
   /** How urgently this should land, which is what makes the scheduler's
    *  unhappy path reachable. */
   bookWithinDays: number;
+  /** For the decision log and the review pane. Precise, clinician-facing. */
   rationale: string;
+  /**
+   * For the patient. Kept separate because the two audiences need different
+   * sentences and the first draft of this proved it: "First-degree relative
+   * diagnosed at 52: screening begins at 40 (10 years earlier, floored at 40)"
+   * is exactly right in a decision log and unusable out loud. Authored here so
+   * a model never has to translate between them.
+   */
+  patientSummary: string;
 }
 
 export function recommendScreening(
@@ -231,6 +240,7 @@ export function recommendScreening(
       riskTier: "average",
       bookWithinDays: bookingWindowDays(patientAge - SCREENING_GUIDELINE.averageRiskStartAge, false),
       rationale: `Average risk: screening begins at ${SCREENING_GUIDELINE.averageRiskStartAge}.`,
+      patientSummary: `Screening is recommended for everyone from ${SCREENING_GUIDELINE.averageRiskStartAge}, so you're due.`,
     };
   }
 
@@ -259,6 +269,9 @@ export function recommendScreening(
     riskTier: "elevated_family_history",
     bookWithinDays: bookingWindowDays(patientAge - startAge, true),
     rationale,
+    patientSummary:
+      `Because of your family history, screening starts earlier for you — at ${startAge} rather than ` +
+      `${SCREENING_GUIDELINE.averageRiskStartAge} — so you're due.`,
   };
 }
 

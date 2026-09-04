@@ -165,3 +165,14 @@ export interface TurnResult {
   decision: Decision | null;
   resolution: Resolution | null;
 }
+
+export interface ComposedReply {
+  text: string;
+  acknowledgment: string;
+  substance: string;
+  guardTripped: string | null;
+}
+
+export interface ExchangeResult extends TurnResult {
+  reply: ComposedReply;
+}

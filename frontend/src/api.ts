@@ -1,4 +1,11 @@
-import type { AgentOption, SummarizeResponse, TranscriptEntry, TranscriptRole, TurnResult } from "./types";
+import type {
+  AgentOption,
+  ExchangeResult,
+  SummarizeResponse,
+  TranscriptEntry,
+  TranscriptRole,
+  TurnResult,
+} from "./types";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://127.0.0.1:8790";
 
@@ -48,6 +55,15 @@ export async function postTurn(
     body: JSON.stringify({ role, content }),
   });
   return jsonOrThrow<TurnResult>(response);
+}
+
+export async function sendMessage(sessionId: string, content: string): Promise<ExchangeResult> {
+  const response = await fetch(`${SERVER_URL}/api/session/${sessionId}/message`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  return jsonOrThrow<ExchangeResult>(response);
 }
 
 export async function summarizeTranscript(options: {
