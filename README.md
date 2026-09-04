@@ -3,6 +3,9 @@
 Bond Health Founding AI Engineer coding exercise. **This document is the plan, written before the build.**
 It will be rewritten into the submission README as the work lands.
 
+For a tour of what's actually built — features, a walkthrough conversation, how to test it, honest
+current limitations, and what comes next — see [`docs/app-guide.md`](docs/app-guide.md).
+
 The exercise names the gap plainly: Daphne is warm and gathers family history beautifully, but
 **she can't schedule anything or resolve anything when asked**. Everything below is aimed at that
 sentence.
