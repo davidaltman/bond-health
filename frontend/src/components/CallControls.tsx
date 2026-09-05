@@ -29,7 +29,14 @@ export function CallControls({
     <div className="panel controls-panel">
       <div className="panel-header">
         <h2>Call setup</h2>
+        <span className="legacy-badge">Legacy voice demo</span>
       </div>
+      <p className="legacy-note">
+        Starting a call here talks to the <strong>old</strong> history-taking agents (personal
+        history &rarr; family history &rarr; summary) &mdash; they only capture facts, they never
+        schedule anything. The scheduling decision engine only runs in <strong>Text mode</strong>,
+        via the chat box in the center column.
+      </p>
 
       <div className="field-row">
         <label className="field">

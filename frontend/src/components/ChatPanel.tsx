@@ -37,6 +37,7 @@ export function ChatPanel({
     <div className="panel transcript-panel">
       <div className="panel-header">
         <h2>Conversation</h2>
+        <span className="current-badge">The decision engine — type here</span>
         <button type="button" className="chat-reset" onClick={onReset} disabled={transcript.length === 0}>
           New session
         </button>
