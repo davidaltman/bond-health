@@ -52,6 +52,13 @@
     {
       "role": "user",
       "content": "Tuesday morning would be great, thanks.",
+      "expectOutcome": "ASK",
+      "expectGate": "escort"
+    },
+    { "role": "agent", "content": "One more thing — who can I send a calendar invite to for the pickup afterward?" },
+    {
+      "role": "user",
+      "content": "My husband Mark can do it, his cell is 555-201-3344.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }

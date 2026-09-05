@@ -36,6 +36,12 @@
     {
       "role": "user",
       "content": "Fridays after noon are best.",
+      "expectOutcome": "ASK",
+      "expectGate": "escort"
+    },
+    {
+      "role": "user",
+      "content": "My sister can pick me up, no need for the number.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }

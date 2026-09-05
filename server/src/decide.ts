@@ -23,6 +23,7 @@
  * requirements.ts, never from a model. The model classifies; authored copy
  * speaks.
  */
+import type { EscortContact } from "./escort.js";
 import type { ClinicalFact, ConversationSignals } from "./ledger.js";
 import type { SchedulingPreference } from "./preference.js";
 import {
@@ -62,6 +63,7 @@ export type GateName =
   | "readiness"
   | "eligibility"
   | "scheduling"
+  | "escort"
   | "already_resolved"
   | "stuck"
   | "act";
@@ -92,7 +94,7 @@ export interface Decision {
   gate: GateName;
   reason: string;
   /** For ASK: the one thing being asked for, and the authored wording. */
-  missingSlot: Slot | "red_flag_symptoms" | "readiness" | "scheduling_preference" | null;
+  missingSlot: Slot | "red_flag_symptoms" | "readiness" | "scheduling_preference" | "escort_contact" | null;
   say: string;
   /** Fact ids consulted, so a reviewer can see the basis rather than trust it. */
   evidence: string[];
@@ -102,6 +104,10 @@ export interface Decision {
    *  back to SCHEDULING_ONLY_BOOKING_WINDOW_DAYS when there is none, so the
    *  scheduler always has a window to book against regardless of mode. */
   bookWithinDays: number | null;
+  /** Passed through from input so sessions.ts's ACT side effect can send the
+   *  mocked calendar invite without re-deriving whether one was asked for.
+   *  Null until the escort gate has actually fired once -- see that gate. */
+  escortContact: EscortContact | null;
 }
 
 export interface DecisionInput {
@@ -125,6 +131,11 @@ export interface DecisionInput {
   /** Set once the patient has given a day/time preference, or null while
    *  still waiting on one. See preference.ts. */
   schedulingPreference: SchedulingPreference | null;
+  /** Set once the escort gate has asked and gotten any reply (including a
+   *  decline), or null while still waiting on that ask. See escort.ts. Unlike
+   *  schedulingPreference, "asked and declined" is itself a terminal value
+   *  here, not something the caller retries. */
+  escortContact: EscortContact | null;
   /** See SessionMode. Defaults to "full" at the session level; every
    *  DecisionInput is expected to set it explicitly. */
   mode: SessionMode;
@@ -133,7 +144,13 @@ export interface DecisionInput {
 export function decide(input: DecisionInput): Decision {
   const { turn, facts, signals, mode } = input;
   const readings = readSlots(facts);
-  const base = { turn, evidence: facts.map((fact) => fact.id), recommendation: null, bookWithinDays: null };
+  const base = {
+    turn,
+    evidence: facts.map((fact) => fact.id),
+    recommendation: null,
+    bookWithinDays: null,
+    escortContact: null,
+  };
 
   const exhausted = (slot: string) => (input.askCounts[slot] ?? 0) >= MAX_ASKS_PER_SLOT;
   const giveUp = (slot: string, what: string): Decision => ({
@@ -325,12 +342,35 @@ export function decide(input: DecisionInput): Decision {
   // concern -- defaulting silently to the soonest opening is the sensible
   // move, not a reason to escalate to a person.
 
+  // --- Gate 7: escort / pickup contact --------------------------------------
+  // Sedation means the patient cannot drive themselves home -- the prep
+  // instructions already say so, but nobody had actually asked who's coming
+  // until this gate existed. Asked once, after a day/time is settled, and
+  // -- unlike every other ASK in this file -- never blocking: a decline, a
+  // name, or an unparseable reply are all equally final. There is no
+  // "exhausted" escalation to HANDOFF here on purpose, because the answer to
+  // "I don't have anyone" is "that's fine," not a repeat of the question.
+  if (!input.escortContact) {
+    return {
+      ...withRecommendation,
+      outcome: "ASK",
+      gate: "escort",
+      reason: "Day/time is settled but no pickup contact has been asked for yet.",
+      missingSlot: "escort_contact",
+      say:
+        "One more thing — you'll be sedated for this, so you won't be able to drive yourself home. " +
+        "Is there a friend or family member I can send a calendar invite to for the pickup? " +
+        "If there isn't anyone yet, that's completely fine — I'll still get you booked.",
+    };
+  }
+
   // --- ACT -----------------------------------------------------------------
   return {
     ...withRecommendation,
     outcome: "ACT",
     gate: "act",
     bookWithinDays: recommendation?.bookWithinDays ?? SCHEDULING_ONLY_BOOKING_WINDOW_DAYS,
+    escortContact: input.escortContact,
     reason: recommendation
       ? `All gates passed: screening indicated (${recommendation.riskTier}), symptoms addressed, patient has asked to proceed.`
       : "Scheduling-only session: no eligibility check performed, symptoms addressed, patient has asked to proceed.",

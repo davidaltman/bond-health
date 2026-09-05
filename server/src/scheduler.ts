@@ -22,6 +22,7 @@
  * always grabbing the earliest one.
  */
 import { randomUUID } from "node:crypto";
+import type { EscortContact } from "./escort.js";
 import { describePreference, type SchedulingPreference, type TimeOfDay } from "./preference.js";
 
 /** Colonoscopy needs prep, a driver, and a scoped room. Nothing inside three
@@ -56,6 +57,14 @@ export interface Booking {
 export type SchedulingResult =
   | { status: "booked"; booking: Booking; matchedPreference: boolean }
   | { status: "waitlisted"; waitlistId: string; reason: string; earliestAvailableDays: number; nextStep: string };
+
+export interface EscortInvite {
+  sent: boolean;
+  /** Whatever the patient said, verbatim. There's no real contact book to
+   *  resolve a name against, so the mock invite just echoes it back as the
+   *  "recipient" it would have gone to. */
+  to: string | null;
+}
 
 const CLINICS = [
   { name: "Bay Endoscopy Center", offsets: [21, 28, 35] },
@@ -190,6 +199,21 @@ export function scheduleScreening(
 
   const { slot, matched } = pickSlot(slots, preference);
   return { status: "booked", booking: confirmHold(holdSlot(slot).id), matchedPreference: matched };
+}
+
+/**
+ * Mocked calendar-invite send for the post-procedure pickup contact.
+ *
+ * Real: nothing. This never touches a calendar or email API -- per the
+ * decision to mock this rather than build it, it exists only so the booking
+ * confirmation can honestly say whether an invite went out, without ever
+ * claiming a delivery this app has no way to guarantee. Only called from
+ * ACT, and only when a contact was actually given -- see decide.ts's
+ * "escort" gate, which never blocks a booking on this being present.
+ */
+export function sendEscortInvite(contact: EscortContact | null): EscortInvite {
+  if (!contact || !contact.provided) return { sent: false, to: null };
+  return { sent: true, to: contact.label };
 }
 
 export { FIRST_AVAILABLE_DAYS };

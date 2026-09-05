@@ -27,6 +27,12 @@
     {
       "role": "user",
       "content": "Anytime soon works.",
+      "expectOutcome": "ASK",
+      "expectGate": "escort"
+    },
+    {
+      "role": "user",
+      "content": "I don't have anyone, I'll manage on my own.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }

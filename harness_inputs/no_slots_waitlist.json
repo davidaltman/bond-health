@@ -23,6 +23,13 @@
     {
       "role": "user",
       "content": "Yes, please book me in as soon as you possibly can.",
+      "expectOutcome": "ASK",
+      "expectGate": "escort"
+    },
+    { "role": "agent", "content": "Of course. One more thing — who can I send a calendar invite to for the pickup afterward?" },
+    {
+      "role": "user",
+      "content": "My daughter Sarah can come get me. Her number is 555-908-2211.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }

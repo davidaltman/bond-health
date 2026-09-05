@@ -38,6 +38,12 @@
     {
       "role": "user",
       "content": "Wednesday afternoon works for me.",
+      "expectOutcome": "ASK",
+      "expectGate": "escort"
+    },
+    {
+      "role": "user",
+      "content": "My husband Mark can pick me up, his cell is 555-201-3344.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }

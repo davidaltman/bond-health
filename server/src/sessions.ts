@@ -19,8 +19,9 @@ import { randomUUID } from "node:crypto";
 import { extractTurn } from "./extract-turn.js";
 import { decide, type Decision, type SessionMode } from "./decide.js";
 import { composeReply, type ComposedReply } from "./compose.js";
-import { scheduleScreening, type SchedulingResult } from "./scheduler.js";
+import { scheduleScreening, sendEscortInvite, type EscortInvite, type SchedulingResult } from "./scheduler.js";
 import { describePreference, parseSchedulingPreference, type SchedulingPreference } from "./preference.js";
+import { parseEscortReply, type EscortContact } from "./escort.js";
 import {
   applyOperations,
   createLedger,
@@ -87,6 +88,13 @@ export interface Session {
   /** The patient's stated day/time preference, once given. Logistics, not a
    *  clinical fact, so it lives here rather than in the ledger. */
   schedulingPreference: SchedulingPreference | null;
+  /** Set once the escort gate has asked and gotten any reply, including a
+   *  decline. See escort.ts and decide.ts's "escort" gate. */
+  escortContact: EscortContact | null;
+  /** The mocked calendar-invite outcome, once ACT has run. Null until then,
+   *  and `{ sent: false, to: null }` (not null) if ACT ran but no contact was
+   *  ever given -- the two are different facts about the session. */
+  escortInvite: EscortInvite | null;
   /** Reviewer flags raised against specific turns. */
   flags: ReviewFlag[];
   /** Serializes extraction so turns apply in spoken order. */
@@ -115,6 +123,8 @@ export function createSession(
     askCounts: {},
     bookingRequested: false,
     schedulingPreference: null,
+    escortContact: null,
+    escortInvite: null,
     flags: [],
     queue: Promise.resolve(),
   };
@@ -214,6 +224,15 @@ export async function appendTurn(
         if (preference) session.schedulingPreference = preference;
       }
 
+      // Same reasoning as above, gated differently: a pickup contact only
+      // means anything as the answer to the escort gate's specific question,
+      // so this only parses when that gate is what just asked -- not on
+      // booking intent generally, which would risk reading a stray name
+      // mentioned for some other reason as the pickup answer.
+      if (session.decisions.at(-1)?.gate === "escort" && !session.escortContact) {
+        session.escortContact = parseEscortReply(content);
+      }
+
       runDecision(session, turn.index);
     } catch (error) {
       session.trace.push({
@@ -258,6 +277,7 @@ function runDecision(session: Session, turn: number): void {
     askCounts: session.askCounts,
     bookingRequested: session.bookingRequested,
     schedulingPreference: session.schedulingPreference,
+    escortContact: session.escortContact,
     mode: session.mode,
   });
 
@@ -268,21 +288,35 @@ function runDecision(session: Session, turn: number): void {
   // Persist booking intent for the next turn. A fresh ambivalent turn always
   // routes back through the readiness gate inside decide() regardless of this
   // flag, so clearing it here on that outcome can't suppress a change of
-  // heart -- see decide.ts's wantsToBook.
+  // heart -- see decide.ts's wantsToBook. Both sub-dialogs that follow
+  // readiness (day/time, then pickup contact) need this kept sticky, or the
+  // very next turn's readiness recompute sees no fresh booking signal in an
+  // answer like "my daughter can pick me up" and loops back to "would you
+  // like me to book it?" -- the exact repetition bug this flag exists to
+  // prevent, just one gate later than where it was first found.
   if (decision.gate === "readiness") session.bookingRequested = false;
-  else if (decision.gate === "scheduling" || decision.outcome === "ACT") session.bookingRequested = true;
+  else if (decision.gate === "scheduling" || decision.gate === "escort" || decision.outcome === "ACT")
+    session.bookingRequested = true;
 
   if (decision.outcome === "ACT" && decision.bookWithinDays != null) {
     const result = scheduleScreening(decision.bookWithinDays, session.schedulingPreference);
     session.resolution = result;
+    // Mocked, deliberately -- see escort.ts's header. Runs regardless of
+    // booking outcome so `session.escortInvite` always reflects "did we ask
+    // and what happened," not just the happy path.
+    const invite = sendEscortInvite(decision.escortContact);
+    session.escortInvite = invite;
     if (result.status === "booked") {
       const preferenceNote =
         session.schedulingPreference && !result.matchedPreference
           ? ` I couldn't match ${describePreference(session.schedulingPreference)} exactly, so here's the closest opening I could get:`
           : "";
+      const escortNote = invite.sent
+        ? ` I've sent a calendar invite to ${invite.to} for the pickup.`
+        : "";
       decision.say =
         `You're booked.${preferenceNote} ${formatSlot(result.booking.slot)}. Your confirmation number is ` +
-        `${result.booking.confirmationId}, and I'll send the prep instructions over. ` +
+        `${result.booking.confirmationId}, and I'll send the prep instructions over.${escortNote} ` +
         `${result.booking.prepInstructions[0]}`;
     } else {
       decision.say = `I couldn't get you in inside the window I'd want for you — ${result.reason} ${result.nextStep}`;
