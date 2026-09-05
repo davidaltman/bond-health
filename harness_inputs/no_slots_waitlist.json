@@ -14,6 +14,11 @@
       "role": "user",
       "content": "My mother had colon cancer. She was only 45 when she was diagnosed."
     },
+    { "role": "agent", "content": "And on your father's side?" },
+    {
+      "role": "user",
+      "content": "Nothing on my dad's side that I know of."
+    },
     { "role": "agent", "content": "Any bleeding, weight loss, or changes in bowel habits?" },
     { "role": "user", "content": "No, none of that at all. I feel well." },
     {

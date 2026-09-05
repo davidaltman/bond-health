@@ -71,6 +71,13 @@ statement about the family collectively, including a denial: "nobody in my
 family has had colon cancer" is subject "family" with status "never", not a
 fact about the patient.
 
+A reply that names one specific parent's side ("nothing on my mom's side",
+"my dad's side is clear") is about that parent only -- subject "mother" or
+"father" respectively -- not "family". "Family" is reserved for a statement
+that names no side at all ("nobody in my family", "no history that I know
+of"). Getting this wrong silently marks a question about the other parent as
+already answered when it was never actually addressed.
+
 attribute is a short canonical key, lowercase, no dates or ages inside it:
 "colonoscopy", "rosacea", "doxycycline", "wrist numbness". value is the readable
 detail. Reuse the exact attribute already on file when referring to the same

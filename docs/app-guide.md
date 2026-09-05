@@ -189,6 +189,30 @@ earlier in the session.
 See it: ask "what day is my appointment?" or similar after booking, in any medium, and
 `server/src/decide.ts`'s `already_resolved` gate.
 
+### 13. Family history, asked per-relative, not as one blanket question
+
+The sufficiency gate asks about mother and father individually — "Has your mother had colon cancer
+or polyps?", then "And has your father...?" — rather than one "any family history?" question. This
+brings back something the original intake agent did (see
+`agent_configs/03_daphne_family_history.create.json`), scoped down to just the two relatives the
+guideline table actually treats differently (a first-degree relative moves the start age; siblings
+and grandparents don't change anything this app computes, so they're not individually asked about).
+That original agent is also the direct inspiration for this whole codebase's gates-over-prompts
+design (see the README's "watching and improving" section) — it tried to self-police the same kind of
+checklist turn by turn and kept short-circuiting after one relative's finding, exactly the failure
+mode a tracked-state gate can't have.
+
+A collective answer — *"no history on either side"*, *"nobody in my family has had that"* — still
+satisfies both questions at once (`familyHistorySlotsForFact` in `requirements.ts`); only an answer
+that names one specific side (*"nothing on my mom's side"*) leaves the other one open. Whichever
+relative(s) a fact is filed under, it also always reaches the risk calculation itself
+(`colorectal_cancer_family_history`, the pre-existing "has anyone" slot), so a sibling's or
+grandparent's history — mentioned but never individually asked about — still changes the
+recommendation even though it satisfies neither tracked question.
+
+See it: the first two `ASK via sufficiency` turns after prior-screening history, and
+`REQUIRED_SLOTS` / `familyHistorySlotsForFact` in `server/src/requirements.ts`.
+
 ---
 
 ## A tour
@@ -227,26 +251,28 @@ decision-engine story. Ignore it unless you're specifically looking at the age-t
 1. `My doctor keeps bringing up a colonoscopy and honestly I keep putting it off.`
    → watch the Decision panel: `ASK via sufficiency`, asking whether you've had one.
 2. `No, never. I've never had a colonoscopy or any of those stool tests.`
-   → still `ASK via sufficiency`, now asking about family history.
+   → still `ASK via sufficiency`, now asking specifically about your mother.
 3. `My father had colon cancer. He was 52 when they found it.`
-   → `ASK via safety` — symptom check, because screening is now indicated and symptoms haven't been
-   asked about yet.
-4. `No bleeding, no weight loss, nothing like that.`
+   → still `ASK via sufficiency` — that answered father, not mother, so it asks again, specifically:
+   "and has your mother had colon cancer or polyps?" (see Features §13).
+4. `Nothing on my mom's side that I know of.`
+   → `ASK via safety` — both relatives are now covered, so it moves to the symptom check.
+5. `No bleeding, no weight loss, nothing like that.`
    → `ASK via readiness` — every fact needed is on file, but you haven't asked to proceed. Watch the
    panel show the guideline rationale (screening starts at 40, not 45, because of family history).
-5. `Yes, please book it.`
+6. `Yes, please book it.`
    → `ASK via scheduling` — it'll ask what day/time works.
-6. `Tuesday morning, if possible.`
+7. `Tuesday morning, if possible.`
    → `ASK via escort` — colonoscopy prep involves sedation, so it asks who can pick you up.
-7. `My husband can grab me, his cell is 555-201-4488.`
+8. `My husband can grab me, his cell is 555-201-4488.`
    → `ASK via shipping` — where to ship the prep kit.
-8. `123 Main Street, Springfield.`
+9. `123 Main Street, Springfield.`
    → `ACT`, with a confirmation ID, prep instructions (including the prep kit's real arrival date),
    and notes that mocked calendar invites went to your husband and to you, all in the Decision panel.
 
 Then, in the same session, try one more line:
 
-9. `Wait, what day was that appointment again?`
+10. `Wait, what day was that appointment again?`
    → still `ASK` (gate `already_resolved`), but now it answers with the real clinic, date, and
    confirmation number instead of repeating "you're all set" — this is the fix for a live bug where
    that question, asked three different ways in a row, got the identical non-answer every time.
@@ -318,7 +344,7 @@ pure unit checks; anything that touches the mock calendar goes through the live-
 The live-server suite drives the actual server over HTTP (no engine mocking), prints every turn's ledger operations,
 signals, and decision, then a final fact table, resolution, and pass/fail per assertion. ~1-5 seconds
 per patient turn (each is a real model call), roughly a minute and a half for all eight scenarios.
-Non-zero exit on any failure. Currently 135/135 across all eight.
+Non-zero exit on any failure. Currently 137/137 across all eight.
 
 Eight scenarios today, one per gate family, plus two that pin down real live bug reports:
 

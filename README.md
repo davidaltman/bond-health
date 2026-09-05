@@ -216,7 +216,7 @@ prompt. Prompts tune tone; structure enforces behavior. (Full incident write-up:
 | 3 | Mock scheduling + resolution, including the unhappy path | 1.5h | done — booking + waitlist |
 | 4 | Daphne conversation layer + tone/readiness policy | 1.0h | done — text loop closed |
 | 5 | Session Review pane (real-time signal) | 1.5h | done — per-turn gate trace + flagging |
-| 6 | Eval runner + ~8 scenario cases | 1.0h | done — `npm run eval`, 8 scenarios, 135/135 |
+| 6 | Eval runner + ~8 scenario cases | 1.0h | done — `npm run eval`, 8 scenarios, 137/137 |
 |   | **Total** | **10.0h** | |
 
 README is written continuously, not at the end.
@@ -261,6 +261,15 @@ message — including "what's the date again?", asked three times in a row — g
 actually being asked. It now recognizes a question about the existing booking's date, clinic, or
 confirmation number and answers with the real values instead of repeating the generic line — see
 app-guide's Features §11 and §12, and `decide.ts`'s `already_resolved` gate.
+
+Also also brought back, at explicit request: the original intake agent's family-history
+questionnaire, scoped to the two relatives the guideline table actually treats differently. The
+sufficiency gate now asks about mother and father individually rather than one blanket "any family
+history?" question — see app-guide's Features §13, `requirements.ts`'s `REQUIRED_SLOTS` and
+`familyHistorySlotsForFact`, and `agent_configs/03_daphne_family_history.create.json`'s notes for the
+original agent's own version of this exact problem (an LLM asked to self-police a relative checklist,
+repeatedly short-circuiting after one finding) — the direct inspiration for this whole repo's
+gates-over-prompts design in the first place.
 
 ## Explicitly not doing (and what I'd build next)
 
@@ -363,7 +372,7 @@ It prints each turn's ledger operations, signals, and decision, then the final f
 resolution, and acceptance checks. Exit code is non-zero if any check fails, so it works as a gate.
 Roughly one small model call per patient turn, 1–5s each, all off the conversational path.
 
-Eight scenarios, ~135 assertions (the exact count varies by a check or two run to run — see the
+Eight scenarios, ~137 assertions (the exact count varies by a check or two run to run — see the
 signal-classification note in `docs/app-guide.md`'s Limitations), one per gate plus two regression
 cases:
 

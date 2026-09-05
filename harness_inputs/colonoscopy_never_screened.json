@@ -17,18 +17,26 @@
       "expectOutcome": "ASK",
       "expectGate": "sufficiency"
     },
-    { "role": "agent", "content": "Got it. Has anyone in your family had colon cancer or polyps?" },
+    { "role": "agent", "content": "Got it. Has your mother had colon cancer or polyps?" },
     {
       "role": "user",
       "content": "My father had colon cancer. He was about 60 when they found it."
     },
     {
       "role": "agent",
-      "content": "Thank you for telling me. That's useful for figuring out the right timing."
+      "content": "Thank you for telling me. And on your mother's side?"
     },
     {
       "role": "user",
-      "content": "Actually wait, I need to correct that. He was 52, not 60. I was mixing it up with my uncle."
+      "content": "Nothing on my mom's side that I know of."
+    },
+    {
+      "role": "agent",
+      "content": "Before I set anything up — any bleeding, unexplained weight loss, or changes in your bowel habits?"
+    },
+    {
+      "role": "user",
+      "content": "Actually wait, I need to correct what I said about my father. He was 52, not 60. I was mixing it up with my uncle."
     },
     {
       "role": "agent",

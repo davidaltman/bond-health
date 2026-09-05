@@ -20,7 +20,26 @@ import type { ClinicalFact, FactStatus } from "./ledger.js";
 export type Slot =
   | "colonoscopy_screening"
   | "alternative_screening"
+  /** The "has anyone" aggregation used by recommendScreening -- any relative
+   *  at all (mother, father, sibling, grandparent, or an unattributed
+   *  collective "family" statement), not just the two tracked below. Kept
+   *  separate from those two so narrowing who gets individually asked about
+   *  never narrows what the risk calculation itself is willing to count. */
   | "colorectal_cancer_family_history"
+  /** Individually asked, mirroring the original intake agent's family-history
+   *  stage (see agent_configs/03_daphne_family_history.create.json's
+   *  metadata.notes) rather than one blanket "any family history?" question
+   *  -- that agent's whole incident history is *why* this app moved
+   *  checklists into tracked state instead of a model's turn-by-turn
+   *  judgment (see README's "watching and improving" section). Scoped to
+   *  mother and father only: the guideline table only ever treats a
+   *  first-degree relative differently, so siblings/grandparents are out of
+   *  scope for asking, same as they were out of scope for the old
+   *  four-category version, just drawn at the line this app's guideline
+   *  table actually uses. A collective "nobody in my family" answer
+   *  satisfies both at once -- see familyHistorySlotsForFact. */
+  | "colorectal_cancer_family_history_mother"
+  | "colorectal_cancer_family_history_father"
   | "colon_polyps"
   | "rectal_bleeding"
   | "unexplained_weight_loss"
@@ -43,25 +62,28 @@ interface SlotMatcher {
   pattern: RegExp;
 }
 
+/**
+ * Colon-cancer/polyps family history is handled separately by
+ * familyHistorySlotsForFact below, not through this generic table, because
+ * one fact needs to be able to fan out into more than one slot (a collective
+ * "nobody in my family" answers for both mother and father at once) --
+ * something a one-fact-one-slot matcher can't express.
+ *
+ * Bare "polyp[s]" is included, not just "colon polyp": the model records the
+ * attribute exactly as the patient said it ("my mom had polyps" -> attribute
+ * "polyps", no "colon" prefix), and a stricter phrase match here silently
+ * dropped that fact from the decision engine entirely -- it stayed correctly
+ * on the ledger, but nothing here matched it, so the family-history slots
+ * kept reading as unmentioned and the same question looped forever.
+ */
+const FAMILY_HISTORY_PATTERN = /colon cancer|colorectal|bowel cancer|rectal cancer|colon polyp|\bpolyps?\b/i;
+
 const SLOT_MATCHERS: SlotMatcher[] = [
   { slot: "colonoscopy_screening", subject: "self", pattern: /colonoscop|colon scope|sigmoidoscop/i },
   {
     slot: "alternative_screening",
     subject: "self",
     pattern: /stool test|stool sample|fit test|\bfit\b|cologuard|fecal|occult blood|\bfobt\b/i,
-  },
-  {
-    slot: "colorectal_cancer_family_history",
-    subject: "relative",
-    // Bare "polyp[s]" is included, not just "colon polyp": a relative's fact
-    // already only reaches this matcher via the subject:"relative" gate
-    // above, and the model records the attribute exactly as the patient said
-    // it ("my mom had polyps" -> attribute "polyps", no "colon" prefix). A
-    // stricter phrase match here silently dropped that fact from the
-    // decision engine entirely -- it stayed correctly on the ledger, but
-    // slotForFact returned null for it, so the family-history slot kept
-    // reading as unmentioned and the same question looped forever.
-    pattern: /colon cancer|colorectal|bowel cancer|rectal cancer|colon polyp|\bpolyps?\b/i,
   },
   { slot: "colon_polyps", subject: "self", pattern: /polyp/i },
   {
@@ -82,16 +104,43 @@ const SLOT_MATCHERS: SlotMatcher[] = [
   { slot: "iron_deficiency_anemia", subject: "self", pattern: /anemi|anaemi|iron deficien|low iron/i },
 ];
 
-/** Which slot, if any, a fact fills. */
-export function slotForFact(fact: ClinicalFact): Slot | null {
+/**
+ * Fans a relative's colon-cancer/polyps fact out into every slot it answers.
+ * Unlike the generic SLOT_MATCHERS table (one fact, one slot), this can
+ * return more than one: `fact.subject` arrives already canonicalized by
+ * ledger.ts (see canonicalSubject/inferFamilyScope), so "mother"/"father" hit
+ * their own tracked slot, and an unattributed collective "family" statement
+ * -- "nobody in my family has had that" -- answers both at once, exactly as
+ * it would if a person had actually asked both questions and gotten the same
+ * answer twice. Always also contributes to the generic aggregation slot, so
+ * a sibling's or grandparent's history (not individually asked about, but
+ * still a real first-degree-adjacent signal) still reaches the guideline
+ * calculation even though it satisfies neither tracked question.
+ */
+function familyHistorySlotsForFact(fact: ClinicalFact): Slot[] {
+  if (fact.subject === "self") return [];
+  if (!FAMILY_HISTORY_PATTERN.test(`${fact.attribute} ${fact.value}`)) return [];
+  const slots: Slot[] = ["colorectal_cancer_family_history"];
+  if (fact.subject === "mother" || fact.subject === "family") slots.push("colorectal_cancer_family_history_mother");
+  if (fact.subject === "father" || fact.subject === "family") slots.push("colorectal_cancer_family_history_father");
+  return slots;
+}
+
+/** Every slot a fact fills. Almost always at most one -- see
+ *  familyHistorySlotsForFact for the one case where a single fact answers
+ *  more than one tracked question at once. */
+export function slotsForFact(fact: ClinicalFact): Slot[] {
+  const familySlots = familyHistorySlotsForFact(fact);
+  if (familySlots.length > 0) return familySlots;
+
   const haystack = `${fact.attribute} ${fact.value}`;
   const isSelf = fact.subject === "self";
   for (const matcher of SLOT_MATCHERS) {
     if (matcher.subject === "self" && !isSelf) continue;
     if (matcher.subject === "relative" && isSelf) continue;
-    if (matcher.pattern.test(haystack)) return matcher.slot;
+    if (matcher.pattern.test(haystack)) return [matcher.slot];
   }
-  return null;
+  return [];
 }
 
 export interface SlotReading {
@@ -102,9 +151,12 @@ export interface SlotReading {
   facts: ClinicalFact[];
 }
 
-const RELATIVE_SLOTS = new Set(
-  SLOT_MATCHERS.filter((matcher) => matcher.subject === "relative").map((matcher) => matcher.slot),
-);
+const RELATIVE_SLOTS = new Set<Slot>([
+  "colorectal_cancer_family_history",
+  "colorectal_cancer_family_history_mother",
+  "colorectal_cancer_family_history_father",
+  ...SLOT_MATCHERS.filter((matcher) => matcher.subject === "relative").map((matcher) => matcher.slot),
+]);
 
 /**
  * Collapses every fact filed under a slot into the one status the gates see.
@@ -159,11 +211,11 @@ function aggregateStatus(slot: Slot, facts: ClinicalFact[]): FactStatus | null {
 export function readSlots(facts: ClinicalFact[]): Map<Slot, SlotReading> {
   const bucketed = new Map<Slot, ClinicalFact[]>();
   for (const fact of facts) {
-    const slot = slotForFact(fact);
-    if (!slot) continue;
-    const list = bucketed.get(slot);
-    if (list) list.push(fact);
-    else bucketed.set(slot, [fact]);
+    for (const slot of slotsForFact(fact)) {
+      const list = bucketed.get(slot);
+      if (list) list.push(fact);
+      else bucketed.set(slot, [fact]);
+    }
   }
 
   const readings = new Map<Slot, SlotReading>();
@@ -376,9 +428,23 @@ export const REQUIRED_SLOTS: Requirement[] = [
     why: "Prior screening determines whether anything is due at all.",
     satisfiedBy: "answer",
   },
+  // Asked individually -- mother, then father -- rather than one blanket
+  // "any family history?" question. See the Slot type's comment on these two
+  // for why: the original intake agent tried the blanket version, model-side,
+  // and repeatedly short-circuited after one relative's finding (see
+  // agent_configs/03_daphne_family_history.create.json's metadata.notes). A
+  // collective "nobody in my family has had that" still satisfies both at
+  // once -- see familyHistorySlotsForFact -- so a patient who answers that
+  // way is never asked twice for the same information.
   {
-    slot: "colorectal_cancer_family_history",
-    question: "Has anyone in your immediate family had colon cancer or polyps?",
+    slot: "colorectal_cancer_family_history_mother",
+    question: "Has your mother had colon cancer or polyps?",
+    why: "A first-degree relative moves the start age and shortens the interval.",
+    satisfiedBy: "mention",
+  },
+  {
+    slot: "colorectal_cancer_family_history_father",
+    question: "And has your father had colon cancer or polyps?",
     why: "A first-degree relative moves the start age and shortens the interval.",
     satisfiedBy: "mention",
   },

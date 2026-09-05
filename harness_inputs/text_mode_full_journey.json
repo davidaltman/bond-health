@@ -21,6 +21,10 @@
     },
     {
       "role": "user",
+      "content": "Nothing on my mom's side that I know of."
+    },
+    {
+      "role": "user",
       "content": "No bleeding, no weight loss, nothing like that at all."
     },
     {
