@@ -229,10 +229,14 @@ Organized by how much they matter.
 - **Single session only.** Nothing persists across calls. The `provenance` field on facts is shaped to
   support multi-session resume later, but the "what's stale, what needs re-confirming" logic doesn't
   exist yet.
-- **The scheduling-preference bug above.** Currently mid-fix.
 
-**Would have mattered before this repo is shared with anyone at Bond — resolved:**
+**Resolved since earlier drafts of this document:**
 
+- **The scheduling-preference bug** (see Features §3 above) — an ambiguous affirmation like
+  *"Wednesday afternoon works for me"* used to silently discard the stated day/time and book the
+  earliest slot instead. Fixed in `preference.ts`, pinned down by a deterministic unit test
+  (`scripts/test_preference.mjs`), and verified via the full eval suite (6/6 scenarios) both before
+  and after the fix.
 - **`transcripts/` contained interview-prep notes**, including files named after a real person, and
   `docs/prior-art-daphne-history-demo.md` named a previous employer's customers and internal system
   paths. Both were removed from the working tree, and `git filter-repo` rewrote history to strip
@@ -257,9 +261,6 @@ Organized by how much they matter.
   sentence ("Yes, please book it") has been observed to classify as `readiness=explicit_request` on
   most runs and `readiness=ambivalent` on others. Documented, not solved; the gate design tolerates it
   (a missed request just gets asked again) but doesn't eliminate it.
-- **The README is behind the code.** It doesn't mention the scheduling gate, and its assertion count
-  (74) is stale (76 now). It also contradicts itself — "explicitly not doing voice" a few paragraphs
-  above a "voice signed-url round trip verified" claim.
 
 ---
 
@@ -281,35 +282,29 @@ Organized by how much they matter.
 
 ## Future improvements, and what comes first
 
-In the order I'd actually do them, with the reasoning:
+Two items that used to head this list are done: the scheduling-preference fix (verified, unit-tested,
+covered by the full eval suite) and the confidentiality scrub (working tree cleaned, git history
+rewritten with `git filter-repo`, force-pushed, verified against a fresh clone). What's left, in the
+order I'd actually do it, with the reasoning:
 
-1. **Finish and verify the scheduling-preference fix.** In progress right now. This is a correctness
-   bug in code shipped this session, not a nice-to-have — it silently discards what the patient said,
-   which is exactly the failure class the rest of this system exists to prevent. Nothing else on this
-   list should land on top of an unverified fix.
-2. **The confidentiality scrub.** Flagged as an open item since early in the build, never executed.
-   Low effort, high downside if skipped — this blocks sharing the repo with anyone, not just polishing
-   it.
-3. **Add scenarios for the two untested scheduling paths:** a preference that can't be matched exactly
+1. **Add scenarios for the two untested scheduling paths:** a preference that can't be matched exactly
    (the "closest opening" messaging), and the exhausted-preference fallback (three unparseable answers
    → silently book soonest). Both paths exist in code; neither has a regression test, which is exactly
    the gap this project's own eval philosophy argues against leaving open.
-4. **PCP / referral gate.** Currently a silent assumption. Even a minimal version — the agent states
+2. **PCP / referral gate.** Currently a silent assumption. Even a minimal version — the agent states
    out loud that this needs a PCP referral, without actually gating on it — would convert a silent gap
    into a stated one, which is the standard the rest of the decision engine holds itself to.
-5. **Reconcile the README against the running code**, including the voice-mode contradiction and the
-   stale assertion count. Cheap, and it's the first thing a reviewer reads.
-6. **Verify voice mode against the new scheduling gate.** It's wired (fire-and-forget postTurn already
+3. **Verify voice mode against the new scheduling gate.** It's wired (fire-and-forget postTurn already
    updates the Decision panel during voice calls per the App.tsx medium toggle), but nobody has run an
    actual mic call through the new "what day/time works" exchange to confirm it behaves sanely when
    Daphne's own model — not the decision engine — is choosing what to ask and when.
-7. **Medication refill scenario**, as the README already names it: the natural second scenario, and a
+4. **Medication refill scenario**, as the README already names it: the natural second scenario, and a
    sharper safety case, since refills implicate a prescriber relationship the agent has no way to
    verify — a different flavor of the same "don't act past what you actually know" problem this system
    is built around.
-8. **Document upload** (a photo of a pill bottle or referral letter → low-confidence facts needing
+5. **Document upload** (a photo of a pill bottle or referral letter → low-confidence facts needing
    confirmation). The `provenance` field on `ClinicalFact` already distinguishes `patient_stated` from
    `document_upload` specifically so this slots in later without a schema migration — it's just not
    built.
-9. **Multi-session memory.** Deliberately last: "what's stale, what needs re-confirming" after a real
+6. **Multi-session memory.** Deliberately last: "what's stale, what needs re-confirming" after a real
    gap in time is its own design problem, not a small extension of the current single-session ledger.

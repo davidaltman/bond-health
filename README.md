@@ -122,7 +122,10 @@ Every turn resolves to exactly one of:
 | **STOP** | Out of scope (diagnosis, prescribing, dosing) → say so plainly |
 | **HANDOFF** | Red flag or genuine ambiguity → route to a human, don't improvise |
 
-Three gate families run before ACT is available:
+Gates run in a fixed priority order before ACT is available — scope, safety, sufficiency, readiness,
+scheduling, eligibility — so a red flag always outranks an explicit "book it," and being asked
+nicely is never a reason to skip a safety check. The three that matter most for the brief's "acts
+with judgment" ask:
 
 - **Sufficiency** — are the required facts present at adequate confidence? (age; prior screening or
   explicit "never"; family history of colorectal cancer, which changes the interval; symptoms)
@@ -130,6 +133,11 @@ Three gate families run before ACT is available:
   flips to HANDOFF. A screening booking is the wrong resolution for a diagnostic problem.
 - **Readiness** — from signals, not facts. Has the patient actually asked to proceed? Ambivalence
   blocks ACT and routes to a *conversational* move, not a booking.
+
+A fourth, added after the first pass: **Scheduling** — once every other gate has passed, the agent
+asks what day or time works before booking anything, rather than silently picking the earliest slot.
+It's a gate, not a courtesy: skipping it means acting on an assumption ("any time is fine") the
+patient never actually stated.
 
 The brief says optimize for fewest steps and shortest time to resolution. So ASK computes the
 **minimum missing set** — the smallest set of facts that would unblock a decision — and asks for the
@@ -206,9 +214,20 @@ README is written continuously, not at the end.
 If something slips, phases 5 and 6 shrink before 1–3 do. A working decision layer with a thin
 review pane beats a beautiful pane over an agent that can't decide anything.
 
+Two things landed after phase 6, outside this table: a correctness fix to the scheduling-preference
+parser (it was silently discarding a stated day/time in favor of "soonest" on certain phrasings —
+see app-guide's "Features" §3), and a confidentiality cleanup of the repo and its git history (see
+"Open items" below). Neither was part of the original estimate; both were necessary before this
+repo could be shared with anyone.
+
 ## Explicitly not doing (and what I'd build next)
 
-- **Voice.** Plumbing exists, but it's a stretch goal. Blocked on a sandbox key (below).
+- **Voice, as the primary demo path.** The plumbing is real and verified — signed-URL round trip to
+  ElevenLabs works, and the ledger/decision engine run alongside a live call as an observer (see
+  "Running it" below) — but it's a stretch goal, not the core. Text mode is what actually
+  demonstrates the decision engine *driving* the conversation, since ElevenLabs' own model speaks
+  from its own prompt in voice mode; the engine audits, it doesn't steer. Voice has not been
+  re-verified against the new scheduling gate specifically (see app-guide's "Future improvements").
 - **Medication refill scenario.** The natural second act, and the sharper safety case — refills need
   a prescriber relationship the agent can't verify. Strong candidate for "next."
 - **Document upload** (pill-bottle photo → low-confidence facts needing confirmation). The
@@ -297,7 +316,7 @@ It prints each turn's ledger operations, signals, and decision, then the final f
 resolution, and acceptance checks. Exit code is non-zero if any check fails, so it works as a gate.
 Roughly one small model call per patient turn, 1–5s each, all off the conversational path.
 
-Six scenarios, 74 assertions, one per gate:
+Six scenarios, 76 assertions, one per gate:
 
 | Scenario | Asserts |
 |---|---|
