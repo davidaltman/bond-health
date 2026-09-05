@@ -214,11 +214,17 @@ README is written continuously, not at the end.
 If something slips, phases 5 and 6 shrink before 1–3 do. A working decision layer with a thin
 review pane beats a beautiful pane over an agent that can't decide anything.
 
-Two things landed after phase 6, outside this table: a correctness fix to the scheduling-preference
+Three things landed after phase 6, outside this table: a correctness fix to the scheduling-preference
 parser (it was silently discarding a stated day/time in favor of "soonest" on certain phrasings —
-see app-guide's "Features" §3), and a confidentiality cleanup of the repo and its git history (see
-"Open items" below). Neither was part of the original estimate; both were necessary before this
-repo could be shared with anyone.
+see app-guide's "Features" §3), a confidentiality cleanup of the repo and its git history (see
+"Open items" below), and a second round of fixes from a live bug report that turned up four more
+issues at once — two more preference-parsing gaps, a readiness-gate logic hole that made a bare "yes"
+loop, a silent verbatim-repeat when the acknowledgment layer had nothing to say, and (the one that
+actually mattered clinically) a relative's fact volunteered after an earlier family-history denial
+never reaching the recommendation, even though it was captured correctly on the ledger. See
+app-guide's "Resolved since earlier drafts of this document" for the full account and
+`family_history_correction_after_denial` in the eval suite for the regression case. None of this was
+part of the original estimate; all of it was necessary before "it works" meant what it should.
 
 ## Explicitly not doing (and what I'd build next)
 
@@ -316,7 +322,9 @@ It prints each turn's ledger operations, signals, and decision, then the final f
 resolution, and acceptance checks. Exit code is non-zero if any check fails, so it works as a gate.
 Roughly one small model call per patient turn, 1–5s each, all off the conversational path.
 
-Six scenarios, 76 assertions, one per gate:
+Seven scenarios, ~100 assertions (the exact count varies by a check or two run to run — see the
+signal-classification note in `docs/app-guide.md`'s Limitations), one per gate plus one regression
+case:
 
 | Scenario | Asserts |
 |---|---|
@@ -326,6 +334,7 @@ Six scenarios, 76 assertions, one per gate:
 | `ambivalent_patient` | complete facts are not consent → ASK via readiness, never ACT |
 | `out_of_scope_dosing` | a warfarin dosing question → STOP, whatever else is true |
 | `no_slots_waitlist` | clinical window inside the clinic's lead time → waitlist with a next step |
+| `family_history_correction_after_denial` | a relative's fact volunteered after an earlier family denial still changes the recommendation; a bare "yes" is accepted without a repeat; "fridays after noon" parses correctly |
 
 Or `npm run eval` from `server/`.
 

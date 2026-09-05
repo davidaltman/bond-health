@@ -1,0 +1,51 @@
+{
+  "name": "family_history_correction_after_denial",
+  "mode": "text",
+  "description": "Regression case for a live transcript that surfaced four separate bugs at once. A patient answers the family-history question with a flat 'no', then a turn later volunteers a specific relative's finding instead of answering the pending safety question ('my mom had polyps actually') -- this must (1) not repeat the family-history question a second time, since it was already answered, (2) still change the final recommendation's risk tier and start age even though it arrived after a collective denial, (3) get an acknowledgment on the safety-question repeat it does cause, rather than a silent verbatim re-ask, and (4) a later bare 'yes' answering Daphne's own booking proposal must count as consent without being re-asked, and 'fridays after noon' must parse as Friday afternoon, not fall through to a best-effort soonest booking.",
+  "patientName": "Dana",
+  "patientAge": 53,
+  "turns": [
+    {
+      "role": "user",
+      "content": "I've never had a colonoscopy, and my doctor keeps bringing it up.",
+      "expectOutcome": "ASK",
+      "expectGate": "sufficiency"
+    },
+    {
+      "role": "user",
+      "content": "No, nobody in my family has had colon cancer or polyps."
+    },
+    {
+      "role": "user",
+      "content": "My mom had polyps actually.",
+      "expectOutcome": "ASK",
+      "expectGate": "safety"
+    },
+    {
+      "role": "user",
+      "content": "No bleeding, no weight loss, no changes like that.",
+      "expectOutcome": "ASK",
+      "expectGate": "readiness"
+    },
+    {
+      "role": "user",
+      "content": "Yes.",
+      "expectOutcome": "ASK",
+      "expectGate": "scheduling"
+    },
+    {
+      "role": "user",
+      "content": "Fridays after noon are best.",
+      "expectOutcome": "ACT",
+      "expectGate": "act"
+    }
+  ],
+  "expect": {
+    "finalOutcome": "ACT",
+    "neverOutcome": ["STOP", "HANDOFF"],
+    "resolution": "booked",
+    "confirmationId": true,
+    "recommendation": { "riskTier": "elevated_family_history", "startAge": 40 },
+    "facts": [{ "subject": "mother", "match": "polyp" }]
+  }
+}

@@ -397,7 +397,12 @@ export async function exchange(session: Session, content: string): Promise<Excha
     return { ...turnResult, reply };
   }
 
-  const reply = await composeReply({ decision, signals: session.signals, patientTurn: content });
+  // runDecision() already incremented askCounts for this decision's slot (if
+  // any) before we get here, so a count of 2+ means this exact question was
+  // also asked at least once before -- i.e. what's about to be sent is a
+  // verbatim repeat.
+  const isRepeat = decision.missingSlot != null && (session.askCounts[decision.missingSlot] ?? 0) >= 2;
+  const reply = await composeReply({ decision, signals: session.signals, patientTurn: content, isRepeat });
   await appendTurn(session, "agent", reply.text);
 
   return { ...turnResult, reply, resolution: session.resolution };

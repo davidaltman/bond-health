@@ -53,7 +53,15 @@ const SLOT_MATCHERS: SlotMatcher[] = [
   {
     slot: "colorectal_cancer_family_history",
     subject: "relative",
-    pattern: /colon cancer|colorectal|bowel cancer|rectal cancer|colon polyp/i,
+    // Bare "polyp[s]" is included, not just "colon polyp": a relative's fact
+    // already only reaches this matcher via the subject:"relative" gate
+    // above, and the model records the attribute exactly as the patient said
+    // it ("my mom had polyps" -> attribute "polyps", no "colon" prefix). A
+    // stricter phrase match here silently dropped that fact from the
+    // decision engine entirely -- it stayed correctly on the ledger, but
+    // slotForFact returned null for it, so the family-history slot kept
+    // reading as unmentioned and the same question looped forever.
+    pattern: /colon cancer|colorectal|bowel cancer|rectal cancer|colon polyp|\bpolyps?\b/i,
   },
   { slot: "colon_polyps", subject: "self", pattern: /polyp/i },
   {
@@ -94,29 +102,73 @@ export interface SlotReading {
   facts: ClinicalFact[];
 }
 
+const RELATIVE_SLOTS = new Set(
+  SLOT_MATCHERS.filter((matcher) => matcher.subject === "relative").map((matcher) => matcher.slot),
+);
+
+/**
+ * Collapses every fact filed under a slot into the one status the gates see.
+ *
+ * The three branches encode three different, deliberately non-interchangeable
+ * merge rules -- getting this wrong is how the family-history bug shipped:
+ * an earlier "sharpen unknown only" rule (correct for a patient's own binary
+ * history) was silently applied to relative facts too, which meant a
+ * collective denial ("nobody in my family has...") permanently blocked a
+ * later, more specific, more informative fact ("my mom had polyps") from
+ * ever being seen -- the fact sat correctly on the ledger the whole time; the
+ * gates just never looked at it again.
+ */
+function aggregateStatus(slot: Slot, facts: ClinicalFact[]): FactStatus | null {
+  if (facts.length === 0) return null;
+
+  if (RED_FLAG_SLOTS.includes(slot)) {
+    // A current symptom is a one-way ratchet: once any fact says "active", no
+    // earlier or later denial clears it. Not last-write-wins on purpose --
+    // for a safety question, missing a real symptom is the only error that
+    // matters here.
+    return facts.some((f) => f.qualifiers.status === "active") ? "active" : facts[facts.length - 1].qualifiers.status;
+  }
+
+  if (RELATIVE_SLOTS.has(slot)) {
+    // Family history is a "has anyone" aggregation, not one person's
+    // timeline, and per isAffirmative()'s own contract a relative fact is
+    // affirmative at *any* status except "never" -- "unknown" still means it
+    // happened, just without detail on whether it's ongoing. So any non-never
+    // fact here outranks a separate "never" fact, even one for a different
+    // condition or a different (collective "family") subject: "nobody in my
+    // family has had that" and "my mom had polyps" cannot both be true, and
+    // the finding is the one that changes the screening age. Only when every
+    // fact under this slot is a "never" does the slot read as "never".
+    if (facts.some((f) => f.qualifiers.status !== "never")) {
+      if (facts.some((f) => f.qualifiers.status === "active")) return "active";
+      if (facts.some((f) => f.qualifiers.status === "resolved")) return "resolved";
+      return "unknown";
+    }
+    return "never";
+  }
+
+  // Self-reported history: only ever sharpen an unanswered slot. A later
+  // vague fact must not overwrite a definite one -- "patient asked to book a
+  // colonoscopy" arriving as active would otherwise flip "never screened" to
+  // "screened", which is the most dangerous single error this engine could
+  // make. The first definite fact wins, permanently.
+  const definite = facts.find((f) => f.qualifiers.status !== "unknown");
+  return definite ? definite.qualifiers.status : "unknown";
+}
+
 export function readSlots(facts: ClinicalFact[]): Map<Slot, SlotReading> {
-  const readings = new Map<Slot, SlotReading>();
+  const bucketed = new Map<Slot, ClinicalFact[]>();
   for (const fact of facts) {
     const slot = slotForFact(fact);
     if (!slot) continue;
-    const existing = readings.get(slot);
-    if (!existing) {
-      readings.set(slot, { slot, status: fact.qualifiers.status, facts: [fact] });
-      continue;
-    }
-    existing.facts.push(fact);
+    const list = bucketed.get(slot);
+    if (list) list.push(fact);
+    else bucketed.set(slot, [fact]);
+  }
 
-    if (RED_FLAG_SLOTS.includes(slot)) {
-      // For symptoms, a current finding outranks an earlier denial: "no
-      // bleeding" then "actually, some blood last week" is a red flag.
-      if (fact.qualifiers.status === "active") existing.status = "active";
-    } else if (existing.status === "unknown" && fact.qualifiers.status !== "unknown") {
-      // For history, only sharpen an unanswered slot. A later vague fact must
-      // not overwrite a definite one -- "patient asked to book a colonoscopy"
-      // arriving as active would otherwise flip "never screened" to "screened",
-      // which is the most dangerous single error this engine could make.
-      existing.status = fact.qualifiers.status;
-    }
+  const readings = new Map<Slot, SlotReading>();
+  for (const [slot, slotFacts] of bucketed) {
+    readings.set(slot, { slot, status: aggregateStatus(slot, slotFacts), facts: slotFacts });
   }
   return readings;
 }

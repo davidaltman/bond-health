@@ -231,7 +231,14 @@ export function decide(input: DecisionInput): Decision {
   // consent, and this is the gate that keeps a well-informed agent from
   // steamrolling an ambivalent person.
   const readiness = signals?.readiness ?? "not_raised";
-  const explicitNow = readiness === "explicit_request";
+  // "ready" (agreeing in principle -- a plain "yes" to "would you like me to
+  // book it?") and "explicit_request" (proactively asking, "can you book
+  // it?") are both real consent; they differ in how the patient expressed it,
+  // not in whether they gave it. Treating only explicit_request as
+  // sufficient left a bare "yes" answering Daphne's own proposal stuck in a
+  // loop -- the readiness vocabulary had a value ("ready") that nothing here
+  // ever checked.
+  const explicitNow = readiness === "explicit_request" || readiness === "ready";
   const ambivalentNow = readiness === "ambivalent" || signals?.hesitation === "strong";
 
   // Booking intent carries across the day/time sub-dialog below (sticky),

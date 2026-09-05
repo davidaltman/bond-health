@@ -47,7 +47,15 @@ Match the patient's state:
 - neutral      usually an empty string
 
 If the patient is simply answering a question, an empty string is right. Filler
-after every turn is worse than silence.`;
+after every turn is worse than silence.
+
+Exception: if you are told this question was already asked once and is about to
+be asked again verbatim, always write something -- even for a neutral tone.
+The patient said something that didn't answer it (often something else worth
+noting), and repeating the identical question with zero acknowledgment reads as
+not having listened. Keep it just as short and just as free of clinical
+content: "Noted, thanks." / "Got it -- one more thing first:" / "That's good to
+know." Never explain *why* you're asking again.`;
 
 const ACK_SCHEMA = {
   type: "object",
@@ -65,6 +73,17 @@ const FALLBACK_ACK: Record<string, string> = {
   frustrated: "That's fair.",
   rushed: "",
   neutral: "",
+};
+
+/** Fallback when the question is a verbatim repeat, keyed the same way. Unlike
+ *  FALLBACK_ACK, "neutral" and "rushed" are not empty here -- a repeat always
+ *  needs *something*, which is the entire point of forcing it. */
+const FALLBACK_ACK_REPEAT: Record<string, string> = {
+  embarrassed: "No judgement here at all.",
+  worried: "I hear you.",
+  frustrated: "That's fair.",
+  rushed: "Noted.",
+  neutral: "Got it, thanks.",
 };
 
 export interface ComposedReply {
@@ -98,6 +117,14 @@ export async function composeReply(options: {
   decision: Decision;
   signals: ConversationSignals | null;
   patientTurn: string;
+  /** True when this exact gate/slot was already asked at least once before
+   *  this turn -- i.e. the substance about to be sent is a verbatim repeat.
+   *  Repeats always get an acknowledgment, tone notwithstanding: silently
+   *  re-asking the identical question is precisely the "sounds like a
+   *  broken record" failure this project exists to design against, and a
+   *  neutral tone reading (e.g. the patient calmly volunteered an unrelated
+   *  fact instead of answering) must not suppress it. */
+  isRepeat?: boolean;
 }): Promise<ComposedReply> {
   const substance = options.decision.say.trim();
   const tone = options.signals?.tone ?? "neutral";
@@ -105,10 +132,13 @@ export async function composeReply(options: {
   // A booking confirmation and a refusal both stand on their own. Prefacing
   // "You're booked" with a warm noise reads as padding.
   const wantsAcknowledgment =
-    options.decision.outcome !== "ACT" && (tone !== "neutral" || options.signals?.hesitation !== "none");
+    options.decision.outcome !== "ACT" &&
+    (options.isRepeat || tone !== "neutral" || options.signals?.hesitation !== "none");
 
   let acknowledgment = "";
   let guardTripped: string | null = null;
+
+  const fallbackFor = () => (options.isRepeat ? FALLBACK_ACK_REPEAT[tone] ?? "Got it, thanks." : FALLBACK_ACK[tone] ?? "");
 
   if (wantsAcknowledgment) {
     try {
@@ -118,9 +148,14 @@ export async function composeReply(options: {
           `Patient tone: ${tone}`,
           `Hesitation: ${options.signals?.hesitation ?? "none"}`,
           `They just said: ${options.patientTurn}`,
+          options.isRepeat
+            ? "This exact question was already asked once before and is about to be asked again verbatim -- write something, even for a neutral tone."
+            : "",
           "",
           "Write only the acknowledgment.",
-        ].join("\n"),
+        ]
+          .filter(Boolean)
+          .join("\n"),
         schemaName: "acknowledgment",
         schema: ACK_SCHEMA,
         maxOutputTokens: 256,
@@ -128,10 +163,11 @@ export async function composeReply(options: {
       });
       const candidate = (result.acknowledgment ?? "").trim();
       guardTripped = guard(candidate);
-      acknowledgment = guardTripped ? (FALLBACK_ACK[tone] ?? "") : candidate;
+      acknowledgment = guardTripped ? fallbackFor() : candidate;
+      if (options.isRepeat && !acknowledgment) acknowledgment = fallbackFor();
     } catch (error) {
       guardTripped = error instanceof Error ? error.message : String(error);
-      acknowledgment = FALLBACK_ACK[tone] ?? "";
+      acknowledgment = fallbackFor();
     }
   }
 

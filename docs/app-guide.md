@@ -194,7 +194,7 @@ signals, and decision, then a final fact table, resolution, and pass/fail per as
 per patient turn (each is a real model call), roughly a minute for all six scenarios. Non-zero exit on
 any failure.
 
-Six scenarios today, one per gate family:
+Seven scenarios today, one per gate family, plus one that pins down a real live bug report:
 
 | Scenario | Proves |
 |---|---|
@@ -204,6 +204,7 @@ Six scenarios today, one per gate family:
 | `ambivalent_patient` | complete facts are not consent |
 | `out_of_scope_dosing` | a clinical question gets `STOP`, unconditionally |
 | `no_slots_waitlist` | the unhappy resolution path — waitlist with a real next step |
+| `family_history_correction_after_denial` | a relative's fact volunteered after an earlier family denial still changes the recommendation, a bare "yes" answering Daphne's own proposal is accepted without a repeat, and a plural day name + two-word "after noon" parse correctly — see "Resolved since earlier drafts" below |
 
 **The live-to-regression loop:** flag a turn in the Session review pane, export it, drop the file into
 `harness_inputs/`, fill in the `FIXME` with what *should* have happened, and it runs with everything
@@ -235,8 +236,34 @@ Organized by how much they matter.
 - **The scheduling-preference bug** (see Features §3 above) — an ambiguous affirmation like
   *"Wednesday afternoon works for me"* used to silently discard the stated day/time and book the
   earliest slot instead. Fixed in `preference.ts`, pinned down by a deterministic unit test
-  (`scripts/test_preference.mjs`), and verified via the full eval suite (6/6 scenarios) both before
+  (`scripts/test_preference.mjs`), and verified via the full eval suite (7/7 scenarios) both before
   and after the fix.
+- **A live transcript surfaced four more bugs at once**, all fixed together and pinned down by
+  `family_history_correction_after_denial`:
+  - A plural day name ("fridays") and the two-word "after noon" both failed to parse in
+    `preference.ts` — same class of bug as above, just two patterns that hadn't been exercised yet.
+    Same fix pattern, added to the same unit test.
+  - `decide.ts`'s readiness gate only ever accepted `readiness=explicit_request`, but the extractor's
+    own vocabulary has a second, legitimate "yes, I consent" value — `ready` ("agreeing in principle"),
+    which is exactly what a bare "yes" answering Daphne's own proposal produces. `ready` was defined
+    and never checked anywhere, so a plain "yes" looped until the session hit `HANDOFF`. Now both
+    values count.
+  - Re-asking a question the patient didn't quite answer (because they volunteered something else
+    instead) produced a silent, word-for-word repeat whenever the patient's tone read as neutral —
+    exactly the "sounds like it isn't listening" failure this whole project exists to avoid. `compose.ts`
+    now always generates an acknowledgment on a repeat, tone notwithstanding.
+  - The most significant one: a relative's fact volunteered *after* an earlier family-history denial
+    (`"nobody in my family has had that"` → later, `"my mom had polyps actually"`) was captured
+    correctly on the ledger but never reached the recommendation. Two separate bugs compounded here —
+    `requirements.ts`'s slot-matching regex required the literal phrase "colon polyp", so a bare
+    "polyps" from a relative matched nothing at all, and separately its slot-aggregation logic locked
+    onto whichever fact it saw first and only let a later fact override an "unknown," never a "never."
+    Fixed by broadening the pattern and rewriting the aggregation to treat family history as a "did
+    anyone" search rather than a first-fact-wins merge. A related extraction issue — the model
+    sometimes copied `status: "never"` from the fact being corrected into the new fact describing what
+    was actually said — is now caught by a deterministic guard in `extract-turn.ts`: an "add" claiming
+    "never" without an actual negation word in its own source quote is downgraded to "unknown" rather
+    than trusted outright.
 - **`transcripts/` contained interview-prep notes**, including files named after a real person, and
   `docs/prior-art-daphne-history-demo.md` named a previous employer's customers and internal system
   paths. Both were removed from the working tree, and `git filter-repo` rewrote history to strip
@@ -258,9 +285,12 @@ Organized by how much they matter.
   fully deterministic across days the way the rest of the eval suite is. Doesn't currently cause a
   scenario to flip, but it's a latent flakiness source worth knowing about.
 - **LLM signal classification is occasionally noisy**, independent of anything above — the same
-  sentence ("Yes, please book it") has been observed to classify as `readiness=explicit_request` on
-  most runs and `readiness=ambivalent` on others. Documented, not solved; the gate design tolerates it
-  (a missed request just gets asked again) but doesn't eliminate it.
+  sentence has been observed to classify slightly differently across runs (e.g. `hesitation` reading
+  as `mild` vs `none`). Documented, not solved; the gate design tolerates it (a missed request just
+  gets asked again) but doesn't eliminate it. (A related, sharper issue — a bare "yes" answering
+  Daphne's own proposal reliably classifying as `ready` rather than `explicit_request`, and the gate
+  only checking for the latter — was a real logic gap, not noise, and is fixed; see "Resolved since
+  earlier drafts" above.)
 
 ---
 

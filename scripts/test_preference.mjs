@@ -16,6 +16,14 @@
  * me") was silently read as "no preference, take the soonest," discarding
  * the day/time the patient had just given. See preference.ts's
  * AMBIGUOUS_SOONEST_PATTERN comment for the fix.
+ *
+ * Two more regressions live here now, both found from the same live
+ * transcript: "fridays after noon are best" parsed as no signal at all
+ * (null) three turns in a row, because the day-of-week regex required the
+ * exact singular "friday" (missing the plural "fridays"), and the
+ * time-of-day regex required the one-word "afternoon" (missing the very
+ * common two-word "after noon"). See preference.ts's dayOfWeek/timeOfDay
+ * comments for the fix.
  */
 import { parseSchedulingPreference, describePreference } from "../server/src/preference.js";
 
@@ -54,6 +62,21 @@ const cases = [
     name: "no scheduling signal at all returns null, not a guess",
     input: "I'm still not sure I want to do this.",
     expect: null,
+  },
+  {
+    name: "plural day name (fridays) matches the same as the singular",
+    input: "Fridays are usually good for me.",
+    expect: { dayOfWeek: 5, timeOfDay: null, soonest: false },
+  },
+  {
+    name: "'after noon' as two words means afternoon, not just the one-word form",
+    input: "I'd prefer after noon if that's possible",
+    expect: { dayOfWeek: null, timeOfDay: "afternoon", soonest: false },
+  },
+  {
+    name: "regression: plural day + two-word 'after noon' together, exact live transcript wording",
+    input: "fridays after noon are best",
+    expect: { dayOfWeek: 5, timeOfDay: "afternoon", soonest: false },
   },
 ];
 

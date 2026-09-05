@@ -24,6 +24,7 @@ import {
   TONES,
   VERBOSITIES,
   type ConversationSignals,
+  type FactStatus,
   type ProposedOperation,
 } from "./ledger.js";
 
@@ -50,6 +51,15 @@ Only contradict when the new statement and the old one cannot both be true.
 Filling in a blank, sharpening a vague answer, or adding an age to a fact that
 had none is a "refine". "He was 52, not 60" contradicts. "I've never had one",
 after a fact that only said the topic came up, refines.
+
+A contradict is always followed by an "add" for the corrected version, and
+that add's own status describes what was just said, never the status of the
+fact being corrected. "Nobody in my family has had that" (status "never")
+followed later by "actually, my mom had polyps" contradicts the family denial
+and adds a fact about the mother -- with status "unknown" unless the reply
+says whether it's ongoing or resolved. Do not carry "never" over into the new
+fact just because it is replacing one; the patient is affirming something
+happened, which "never" can never mean.
 
 Use fact_ref ids exactly as they appear in the facts-on-file list. If the reply
 adds nothing to the record, return an empty operations list -- that is a normal
@@ -222,6 +232,29 @@ function pick<T extends string>(value: string, allowed: T[], fallback: T): T {
   return (allowed as string[]).includes(value) ? (value as T) : fallback;
 }
 
+/** Any of the ordinary ways a reply states an explicit negative. */
+const NEGATION_PATTERN =
+  /\b(no|not|never|none|nobody|nothing|neither|denies?|denying|didn't|doesn't|hasn't|haven't|isn't|wasn't)\b/i;
+
+/**
+ * "never" is only ever correct when the quote itself actually negates
+ * something -- that is the whole definition the prompt gives it. Observed in
+ * practice: correcting a denial ("nobody in my family has had that" /
+ * "actually, my mom had polyps") sometimes produced an "add" that copied
+ * "never" over from the fact being contradicted instead of describing what
+ * was just affirmed, which is backwards -- the patient is stating something
+ * happened. Rather than trust the model to never make this mistake again, an
+ * "add" claiming "never" without a negation word in its own source quote is
+ * downgraded to "unknown", which is always a safe fallback (it costs an extra
+ * ask; a wrong "never" costs a fact silently going missing).
+ */
+function coerceStatus(op: string, status: FactStatus | null, sourceQuote: string): FactStatus | null {
+  if (op === "add" && status === "never" && !NEGATION_PATTERN.test(sourceQuote)) {
+    return "unknown";
+  }
+  return status;
+}
+
 export async function extractTurn(input: ExtractTurnInput): Promise<TurnExtraction> {
   const userPrompt = [
     "FACTS ON FILE",
@@ -258,8 +291,13 @@ export async function extractTurn(input: ExtractTurnInput): Promise<TurnExtracti
     value: operation.value,
     onsetAge: typeof operation.onset_age === "number" ? operation.onset_age : null,
     lastOccurred: operation.last_occurred,
-    status:
-      operation.status && (FACT_STATUSES as string[]).includes(operation.status) ? operation.status : null,
+    status: coerceStatus(
+      operation.op,
+      operation.status && (FACT_STATUSES as string[]).includes(operation.status)
+        ? (operation.status as FactStatus)
+        : null,
+      operation.source_quote ?? "",
+    ),
     confidence:
       operation.confidence && (CONFIDENCES as string[]).includes(operation.confidence)
         ? operation.confidence

@@ -63,10 +63,15 @@ export function parseSchedulingPreference(text: string): SchedulingPreference | 
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  const dayOfWeek = WEEKDAYS.findIndex((day) => new RegExp(`\\b${day}\\b`, "i").test(trimmed));
+  // "s" suffix so "fridays" (a very natural way to answer "what day works")
+  // matches, not just the exact singular "friday".
+  const dayOfWeek = WEEKDAYS.findIndex((day) => new RegExp(`\\b${day}s?\\b`, "i").test(trimmed));
+  // "after noon" as two words is a common, deliberate way people write/say
+  // "afternoon" -- worth matching on its own, not just as a typo of the
+  // one-word form.
   const timeOfDay: TimeOfDay | null = /\bmornings?\b/i.test(trimmed)
     ? "morning"
-    : /\bafternoons?\b|\bevenings?\b/i.test(trimmed)
+    : /\bafternoons?\b|\bafter\s+noon\b|\bevenings?\b/i.test(trimmed)
       ? "afternoon"
       : null;
   const namedSomething = dayOfWeek !== -1 || timeOfDay !== null;

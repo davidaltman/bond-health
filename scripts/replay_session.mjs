@@ -237,6 +237,21 @@ async function finish(scenario, sessionId, checks, seenOutcomes) {
     });
   }
 
+  // Pins down the family-history aggregation bug: a relative's fact filed
+  // *after* an earlier collective denial must still change the risk tier and
+  // start age the final recommendation used, not just sit unread on the
+  // ledger. See requirements.ts's aggregateStatus for the fix.
+  if (expect.recommendation) {
+    const recommendation = state.decision?.recommendation;
+    for (const [key, want] of Object.entries(expect.recommendation)) {
+      checks.push({
+        name: `recommendation.${key} is ${JSON.stringify(want)}`,
+        pass: recommendation?.[key] === want,
+        got: JSON.stringify(recommendation?.[key]),
+      });
+    }
+  }
+
   // Pins down the scheduling-preference bug: a reply that both states a day/
   // time AND uses an affirmation phrase ("works for me") must not silently
   // fall back to "soonest, matched" -- see preference.ts's AMBIGUOUS_SOONEST
