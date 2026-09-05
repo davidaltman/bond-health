@@ -76,3 +76,14 @@ export const BOND_AGENTS: AgentOption[] = [
 ];
 
 export const DEFAULT_AGENT_ID = "intake_consent";
+
+/**
+ * The voice-scheduling agent (see agent_configs/05_daphne_scheduling_voice.
+ * create.json). Deliberately not part of BOND_AGENTS above: that list backs
+ * the legacy "Call setup" panel's 4-stage history-taking chain, and this
+ * agent has nothing to do with that chain -- it delegates its entire
+ * scheduling behavior to the decision engine via a client tool, and is
+ * driven from its own isolated panel (useVoiceSchedulingConversation.ts),
+ * not the agent-picker dropdown.
+ */
+export const SCHEDULING_VOICE_AGENT_ID = "agent_4001m1r05htae7p9dvaznt990z43";

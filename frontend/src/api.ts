@@ -22,7 +22,11 @@ async function jsonOrThrow<T>(response: Response): Promise<T> {
   return body as T;
 }
 
-export async function fetchAgents(): Promise<{ agents: AgentOption[]; defaultAgentId: string }> {
+export async function fetchAgents(): Promise<{
+  agents: AgentOption[];
+  defaultAgentId: string;
+  schedulingVoiceAgentId: string;
+}> {
   const response = await fetch(`${SERVER_URL}/api/agents`);
   return jsonOrThrow(response);
 }

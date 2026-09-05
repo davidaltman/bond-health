@@ -11,6 +11,7 @@ export function CallControls({
   status,
   onStart,
   onStop,
+  showLegacyControls,
 }: {
   agents: AgentOption[];
   selectedAgentId: string;
@@ -22,21 +23,29 @@ export function CallControls({
   status: CallStatus;
   onStart: () => void;
   onStop: () => void;
+  /** The agent picker and Start/Stop buttons below only mean anything for
+   *  the legacy 4-stage history-taking demo -- Text mode and Voice
+   *  (scheduling) each drive their own session from their own center-column
+   *  panel. Patient identity stays visible in every mode, since all three
+   *  read it from here. */
+  showLegacyControls: boolean;
 }) {
   const isLive = status === "connecting" || status === "connected";
 
   return (
     <div className="panel controls-panel">
       <div className="panel-header">
-        <h2>Call setup</h2>
-        <span className="legacy-badge">Legacy voice demo</span>
+        <h2>{showLegacyControls ? "Call setup" : "Patient"}</h2>
+        {showLegacyControls ? <span className="legacy-badge">Legacy voice demo</span> : null}
       </div>
-      <p className="legacy-note">
-        Starting a call here talks to the <strong>old</strong> history-taking agents (personal
-        history &rarr; family history &rarr; summary) &mdash; they only capture facts, they never
-        schedule anything. The scheduling decision engine only runs in <strong>Text mode</strong>,
-        via the chat box in the center column.
-      </p>
+      {showLegacyControls ? (
+        <p className="legacy-note">
+          Starting a call here talks to the <strong>old</strong> history-taking agents (personal
+          history &rarr; family history &rarr; summary) &mdash; they only capture facts, they never
+          schedule anything. For a real scheduling conversation, use <strong>Text</strong> or{" "}
+          <strong>Voice (scheduling)</strong> above instead.
+        </p>
+      ) : null}
 
       <div className="field-row">
         <label className="field">
@@ -65,38 +74,42 @@ export function CallControls({
         </label>
       </div>
 
-      <label className="field">
-        <span>Start on agent</span>
-        <select value={selectedAgentId} disabled={isLive} onChange={(event) => onSelectAgent(event.target.value)}>
-          {agents.map((agent) => (
-            <option key={agent.id} value={agent.id}>
-              {agent.label}
-            </option>
-          ))}
-        </select>
-        <span className="field-hint">
-          {agents.find((agent) => agent.id === selectedAgentId)?.description}
-        </span>
-      </label>
+      {showLegacyControls ? (
+        <>
+          <label className="field">
+            <span>Start on agent</span>
+            <select value={selectedAgentId} disabled={isLive} onChange={(event) => onSelectAgent(event.target.value)}>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.label}
+                </option>
+              ))}
+            </select>
+            <span className="field-hint">
+              {agents.find((agent) => agent.id === selectedAgentId)?.description}
+            </span>
+          </label>
 
-      <div className="call-buttons">
-        <button type="button" className="primary-button" onClick={onStart} disabled={isLive}>
-          {status === "connecting" ? "Connecting…" : "Start call"}
-        </button>
-        <button
-          type="button"
-          className="danger-button"
-          onClick={onStop}
-          disabled={status !== "connected" && status !== "connecting"}
-        >
-          Stop call
-        </button>
-      </div>
+          <div className="call-buttons">
+            <button type="button" className="primary-button" onClick={onStart} disabled={isLive}>
+              {status === "connecting" ? "Connecting…" : "Start call"}
+            </button>
+            <button
+              type="button"
+              className="danger-button"
+              onClick={onStop}
+              disabled={status !== "connected" && status !== "connecting"}
+            >
+              Stop call
+            </button>
+          </div>
 
-      <p className="controls-note">
-        The 4 Daphne stages hand off to each other automatically once the call starts &mdash; pick a
-        stage above only if you want to jump in partway through for testing.
-      </p>
+          <p className="controls-note">
+            The 4 Daphne stages hand off to each other automatically once the call starts &mdash;
+            pick a stage above only if you want to jump in partway through for testing.
+          </p>
+        </>
+      ) : null}
     </div>
   );
 }

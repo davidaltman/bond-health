@@ -18,7 +18,7 @@ import cors from "cors";
 import express from "express";
 import { extractHealthEvents, buildAgeTimeline, type TranscriptTurn } from "./timeline.js";
 import { generateFollowUps } from "./followups.js";
-import { BOND_AGENTS, DEFAULT_AGENT_ID } from "./agents.js";
+import { BOND_AGENTS, DEFAULT_AGENT_ID, SCHEDULING_VOICE_AGENT_ID } from "./agents.js";
 import { fetchConversationTranscript } from "./conversations.js";
 import { appendTurn, createSession, exchange, exportScenario, getSession, settle } from "./sessions.js";
 import { liveFacts } from "./ledger.js";
@@ -39,7 +39,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/agents", (_req, res) => {
-  res.json({ agents: BOND_AGENTS, defaultAgentId: DEFAULT_AGENT_ID });
+  res.json({ agents: BOND_AGENTS, defaultAgentId: DEFAULT_AGENT_ID, schedulingVoiceAgentId: SCHEDULING_VOICE_AGENT_ID });
 });
 
 app.get("/api/signed-url", async (req, res) => {

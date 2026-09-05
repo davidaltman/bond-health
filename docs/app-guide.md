@@ -83,9 +83,10 @@ decision engine's authored substance, appended verbatim. The eval suite asserts 
 survives character-for-character into what the patient reads. There's no path for the model to
 quietly soften "screening begins at 40" into "usually around your forties."
 
-**Voice mode** is structurally different: ElevenLabs' own conversational model speaks from its own
-prompt, and the ledger/decision engine run alongside as an *observer*, updating the side panels a beat
-after Daphne has already spoken. The engine doesn't steer voice calls; it audits them.
+**Voice (legacy) mode** is structurally different: ElevenLabs' own conversational model speaks from
+its own prompt, and the ledger/decision engine run alongside as an *observer*, updating the side
+panels a beat after Daphne has already spoken. The engine doesn't steer that call; it audits it.
+**Voice (scheduling) mode** does not have this limitation — see feature 9 below.
 
 ### 6. A live review pane, and a loop back into the eval suite
 
@@ -122,6 +123,34 @@ identical handling whether the session started as scheduling-only or full intake
 `harness_inputs/scheduling_only_skips_intake.json`, which asserts both halves of this: the sufficiency
 questions never fire, and a red flag still overrides an explicit booking request.
 
+### 9. Voice, driving the same decision engine as text — not just observing it
+
+**Voice (scheduling)** is a second voice experience, separate from the legacy 4-stage demo. The
+ElevenLabs agent behind it (`agent_configs/05_daphne_scheduling_voice.create.json`) has no scheduling
+behavior written into its own prompt at all — its only instruction is to call a tool with whatever the
+patient just said, then speak back exactly what the tool returns, verbatim. That tool
+(`advance_scheduling`, wired in `frontend/src/useVoiceSchedulingConversation.ts`) is a client tool
+(runs in the browser, so no public webhook is needed for local dev) that calls the identical
+`POST /api/session/:id/message` endpoint the text chat uses. Same gates, same `SessionMode`, same
+escort ask below — voice and text are two mouths on one brain, not two independent implementations
+that happen to agree. The one real cost: each turn now round-trips through the same extraction +
+compose pass text mode does, so expect a beat of silence (roughly 1–3s) after speaking before Daphne
+replies, instead of the near-instant response the legacy agents give.
+
+See it: the **"Voice (scheduling)"** toggle in the header, and
+`frontend/src/components/VoiceSchedulingPanel.tsx`.
+
+### 10. A pickup escort ask that never blocks
+
+Colonoscopy prep involves sedation, so the patient can't drive themselves home. After a booking
+preference is captured (the scheduling gate above) and before the booking is actually made, the
+engine asks once who can pick the patient up, then proceeds to book regardless of the answer — a
+decline ("no one," "I'll figure it out"), a name, or an unparseable mumble are all equally final. If a
+contact was given, a calendar invite is mocked (`sendEscortInvite` in `scheduler.ts` — printed to the
+server log, not actually sent) and the confirmation message says so.
+
+See it: the last `ASK` before `ACT` in either full or scheduling-only mode, and `server/src/escort.ts`.
+
 ---
 
 ## A tour
@@ -134,19 +163,22 @@ cp server/.env.example server/.env   # fill in OPENAI_API_KEY; BOND_ELEVEN_LABS_
 (cd frontend && npm install && npm run dev)   # http://127.0.0.1:5190
 ```
 
-Open `http://127.0.0.1:5190`. You'll see a header with a **Text / Voice** toggle (Text is the default,
-and the one that actually demonstrates the decision engine driving the conversation), three columns,
-and — in text mode — a chat box at the center.
+Open `http://127.0.0.1:5190`. You'll see a header with a **Text / Voice (scheduling) / Voice (legacy)**
+toggle. All but "Voice (legacy)" are driven by the decision engine — pick whichever medium you want to
+test with. Text is the simplest place to see the gates fire turn by turn.
 
-**Left column:** patient name/age controls and call controls (voice mode only, mostly irrelevant in
-text mode), and **"What Daphne knows"** — the live fact ledger, grouped by who the fact is about, with
-a "how they sound" strip underneath showing tone/hesitation/readiness. That strip is explicitly
-labeled "not part of the record" — it's signal, not fact, and it never becomes one.
+**Left column:** patient name/age controls, plus — only in **Voice (legacy)** — the agent picker and
+Start/Stop buttons for the old 4-stage demo (irrelevant in the other two mediums, since each drives
+its own session from its own center-column panel). Below that, **"What Daphne knows"** — the live fact
+ledger, grouped by who the fact is about, with a "how they sound" strip underneath showing
+tone/hesitation/readiness. That strip is explicitly labeled "not part of the record" — it's signal,
+not fact, and it never becomes one.
 
-**Center column:** the conversation (chat box in text mode, transcript in voice mode), then the
-**Decision** panel showing the outcome pill (ACT/ASK/STOP/HANDOFF), which gate fired, why, and — once
-a booking or waitlist exists — the confirmation ID and prep instructions, or the waitlist ID and next
-step. Below that in text mode, the **Session review** pane with the per-turn trace and flag buttons.
+**Center column:** the conversation (chat box in text mode, a transcript plus Start/Stop in either
+voice mode), then the **Decision** panel showing the outcome pill (ACT/ASK/STOP/HANDOFF), which gate
+fired, why, and — once a booking or waitlist exists — the confirmation ID and prep instructions, or the
+waitlist ID and next step. Below that, in text mode and Voice (scheduling) — the two mediums the engine
+actually drives — the **Session review** pane with the per-turn trace and flag buttons.
 
 **Right column:** a summary panel for the separate post-call timeline feature (`/api/summarize`) —
 this is legacy from the prior-art prototype (see README's "Prior art" section), not part of the
@@ -165,9 +197,12 @@ decision-engine story. Ignore it unless you're specifically looking at the age-t
    → `ASK via readiness` — every fact needed is on file, but you haven't asked to proceed. Watch the
    panel show the guideline rationale (screening starts at 40, not 45, because of family history).
 5. `Yes, please book it.`
-   → `ASK via scheduling` — new as of this session. It'll ask what day/time works.
+   → `ASK via scheduling` — it'll ask what day/time works.
 6. `Tuesday morning, if possible.`
-   → `ACT`, with a confirmation ID and prep instructions in the Decision panel.
+   → `ASK via escort` — colonoscopy prep involves sedation, so it asks who can pick you up.
+7. `My husband can grab me, his cell is 555-201-4488.`
+   → `ACT`, with a confirmation ID, prep instructions, and a note that a (mocked) calendar invite
+   went to your husband, all in the Decision panel.
 
 Now try derailing it — `hit "New session"` first, then:
 
@@ -194,7 +229,17 @@ Hit **"New session"**, click **"Scheduling only"** in the header, then:
 3. `Yes, please.`
    → `ASK via scheduling`.
 4. `Anytime soon works.`
-   → `ACT`, booked. Notice the Decision panel's recommendation is empty here — there was never one.
+   → `ASK via escort`, then whatever you answer (including a decline) → `ACT`, booked. Notice the
+   Decision panel's recommendation is empty here — there was never one.
+
+### Try the same conversation over voice
+
+Click **"Voice (scheduling)"** in the header (either session mode works the same way it does in
+text), hit **"Start call"**, and allow microphone access. Say the same lines as the text walkthrough
+above, out loud, one at a time, and wait for Daphne to reply before speaking again — she's not
+choosing what to say; she's reading back exactly what the same decision engine returned, so the
+Decision panel updates in lockstep with what you hear, same as text mode. Expect a short pause
+(roughly 1–3s) after each thing you say before she replies.
 
 ---
 
@@ -360,10 +405,12 @@ order I'd actually do it, with the reasoning:
 2. **PCP / referral gate.** Currently a silent assumption. Even a minimal version — the agent states
    out loud that this needs a PCP referral, without actually gating on it — would convert a silent gap
    into a stated one, which is the standard the rest of the decision engine holds itself to.
-3. **Verify voice mode against the new scheduling gate.** It's wired (fire-and-forget postTurn already
-   updates the Decision panel during voice calls per the App.tsx medium toggle), but nobody has run an
-   actual mic call through the new "what day/time works" exchange to confirm it behaves sanely when
-   Daphne's own model — not the decision engine — is choosing what to ask and when.
+3. **Human-verify Voice (scheduling) against a real mic call, end to end.** It's built (the ElevenLabs
+   agent delegates every turn to the decision engine via a client tool — see feature 9 above) and
+   passes the same manual smoke check text mode did, but nobody has yet run every scenario (red flag,
+   ambivalence, no-slots waitlist, escort decline) through an actual live call to confirm ASR
+   transcription errors, agent-side interruption handling, and the ~1-3s per-turn latency don't cause
+   a different failure mode than text mode has.
 4. **Medication refill scenario**, as the README already names it: the natural second scenario, and a
    sharper safety case, since refills implicate a prescriber relationship the agent has no way to
    verify — a different flavor of the same "don't act past what you actually know" problem this system

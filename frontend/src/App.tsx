@@ -4,16 +4,24 @@ import { AltmanAILogo } from "./components/AltmanAILogo";
 import { CallControls } from "./components/CallControls";
 import { TranscriptPanel } from "./components/TranscriptPanel";
 import { ChatPanel } from "./components/ChatPanel";
+import { VoiceSchedulingPanel } from "./components/VoiceSchedulingPanel";
 import { LiveFactsPanel } from "./components/LiveFactsPanel";
 import { DecisionPanel } from "./components/DecisionPanel";
 import { ReviewPanel } from "./components/ReviewPanel";
 import { SummaryPanel } from "./components/SummaryPanel";
 import { useDaphneConversation } from "./useDaphneConversation";
 import { useTextConversation } from "./useTextConversation";
+import { useVoiceSchedulingConversation } from "./useVoiceSchedulingConversation";
 import { fetchAgents, summarizeTranscript } from "./api";
 import type { AgentOption, SessionMode, SummarizeResponse } from "./types";
 
-type Medium = "text" | "voice";
+// "voice_legacy" is the original 4-stage history-taking demo (observer
+// only -- see useDaphneConversation.ts). "voice_scheduling" is voice driving
+// the same decision engine text mode does (see
+// useVoiceSchedulingConversation.ts). Kept as three flat options rather than
+// a nested toggle under "Voice," since collapsing them back into one control
+// is exactly the ambiguity that prompted separating them.
+type Medium = "text" | "voice_legacy" | "voice_scheduling";
 
 export default function App() {
   // Text is the default because it is the only medium where Daphne's reply is
@@ -28,6 +36,7 @@ export default function App() {
   const [sessionMode, setSessionMode] = useState<SessionMode>("full");
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
+  const [schedulingVoiceAgentId, setSchedulingVoiceAgentId] = useState<string>("");
   const [patientName, setPatientName] = useState("David");
   const [patientAge, setPatientAge] = useState(53);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -66,6 +75,7 @@ export default function App() {
   } = useDaphneConversation(dynamicVariables, patient);
 
   const text = useTextConversation(patient, sessionMode);
+  const voiceScheduling = useVoiceSchedulingConversation(patient, sessionMode);
 
   function handleSessionModeChange(next: SessionMode) {
     if (next === sessionMode) return;
@@ -73,20 +83,26 @@ export default function App() {
     // A session's mode is fixed at creation (see Session.mode) -- there is no
     // well-defined way to turn a scheduling-only session into a full-intake
     // one or back, so switching the toggle starts clean rather than trying to
-    // carry a half-finished conversation across the boundary.
+    // carry a half-finished conversation across the boundary. Both
+    // decision-engine mediums share this toggle, so both get reset.
     text.reset();
+    voiceScheduling.reset();
   }
 
-  const activeFacts = medium === "text" ? text.facts : facts;
-  const activeSignals = medium === "text" ? text.signals : signals;
-  const activeDecision = medium === "text" ? text.decision : decision;
-  const activeResolution = medium === "text" ? text.resolution : resolution;
+  const activeFacts = medium === "text" ? text.facts : medium === "voice_scheduling" ? voiceScheduling.facts : facts;
+  const activeSignals =
+    medium === "text" ? text.signals : medium === "voice_scheduling" ? voiceScheduling.signals : signals;
+  const activeDecision =
+    medium === "text" ? text.decision : medium === "voice_scheduling" ? voiceScheduling.decision : decision;
+  const activeResolution =
+    medium === "text" ? text.resolution : medium === "voice_scheduling" ? voiceScheduling.resolution : resolution;
 
   useEffect(() => {
     fetchAgents()
-      .then(({ agents: loaded, defaultAgentId }) => {
+      .then(({ agents: loaded, defaultAgentId, schedulingVoiceAgentId: schedulingId }) => {
         setAgents(loaded);
         setSelectedAgentId(defaultAgentId);
+        setSchedulingVoiceAgentId(schedulingId);
       })
       .catch((error) => setLoadError(error instanceof Error ? error.message : String(error)));
   }, []);
@@ -133,7 +149,7 @@ export default function App() {
       <header className="app-header">
         <AltmanAILogo size={32} />
         <div className="app-header-subtitle">Health intake, from history-taking to resolution</div>
-        {medium === "text" ? (
+        {medium === "text" || medium === "voice_scheduling" ? (
           <div className="medium-toggle" title="Fixed per session -- switching starts a new one">
             <button
               type="button"
@@ -152,14 +168,18 @@ export default function App() {
           </div>
         ) : null}
         <div className="medium-toggle">
-          {(["text", "voice"] as Medium[]).map((option) => (
+          {([
+            { id: "text", label: "Text" },
+            { id: "voice_scheduling", label: "Voice (scheduling)" },
+            { id: "voice_legacy", label: "Voice (legacy)" },
+          ] as Array<{ id: Medium; label: string }>).map((option) => (
             <button
-              key={option}
+              key={option.id}
               type="button"
-              className={medium === option ? "medium-option medium-option-active" : "medium-option"}
-              onClick={() => setMedium(option)}
+              className={medium === option.id ? "medium-option medium-option-active" : "medium-option"}
+              onClick={() => setMedium(option.id)}
             >
-              {option === "text" ? "Text" : "Voice"}
+              {option.label}
             </button>
           ))}
         </div>
@@ -180,6 +200,7 @@ export default function App() {
             status={status}
             onStart={handleStart}
             onStop={stop}
+            showLegacyControls={medium === "voice_legacy"}
           />
           <LiveFactsPanel facts={activeFacts} signals={activeSignals} />
         </div>
@@ -194,17 +215,29 @@ export default function App() {
               onSend={(message) => void text.send(message)}
               onReset={text.reset}
             />
+          ) : medium === "voice_scheduling" ? (
+            <VoiceSchedulingPanel
+              status={voiceScheduling.status}
+              transcript={voiceScheduling.transcript}
+              errorMessage={voiceScheduling.errorMessage}
+              mode={sessionMode}
+              onStart={() => void voiceScheduling.start(schedulingVoiceAgentId)}
+              onStop={voiceScheduling.stop}
+              onReset={voiceScheduling.reset}
+            />
           ) : (
             <TranscriptPanel status={status} transcript={transcript} errorMessage={errorMessage} />
           )}
           <DecisionPanel decision={activeDecision} resolution={activeResolution} />
-          {medium === "text" ? (
+          {medium === "text" || medium === "voice_scheduling" ? (
             <ReviewPanel
-              trace={text.trace}
-              flaggedTurns={text.flags.map((entry) => entry.turn)}
-              onFlag={(turn, note) => void text.flag(turn, note)}
-              onExport={() => void text.exportScenario()}
-              busy={text.isThinking}
+              trace={medium === "text" ? text.trace : voiceScheduling.trace}
+              flaggedTurns={(medium === "text" ? text.flags : voiceScheduling.flags).map((entry) => entry.turn)}
+              onFlag={(turn, note) =>
+                void (medium === "text" ? text.flag(turn, note) : voiceScheduling.flag(turn, note))
+              }
+              onExport={() => void (medium === "text" ? text.exportScenario() : voiceScheduling.exportScenario())}
+              busy={medium === "text" ? text.isThinking : voiceScheduling.status === "connecting"}
             />
           ) : null}
         </div>

@@ -1,0 +1,106 @@
+{
+  "agent_id": "agent_4001m1r05htae7p9dvaznt990z43",
+  "name": "Bond-Daphne-SchedulingVoice-v1",
+  "conversation_config": {
+    "asr": {
+      "quality": "high",
+      "provider": "scribe_realtime",
+      "user_input_audio_format": "pcm_16000",
+      "keywords": []
+    },
+    "turn": {
+      "turn_timeout": 7.0,
+      "silence_end_call_timeout": 15.0,
+      "mode": "turn",
+      "turn_eagerness": "normal",
+      "turn_model": "turn_v3"
+    },
+    "tts": {
+      "model_id": "eleven_v3_conversational",
+      "voice_id": "hpp4J3VqNfWAUOO0d1Us",
+      "expressive_mode": true,
+      "agent_output_audio_format": "pcm_16000",
+      "optimize_streaming_latency": 3,
+      "stability": 0.6,
+      "speed": 1.0,
+      "similarity_boost": 0.85
+    },
+    "conversation": {
+      "text_only": false,
+      "max_duration_seconds": 900,
+      "client_events": [
+        "audio",
+        "interruption",
+        "user_transcript",
+        "agent_response",
+        "agent_response_correction",
+        "agent_response_metadata"
+      ]
+    },
+    "vad": {
+      "background_voice_detection": true
+    },
+    "agent": {
+      "first_message": "Hi {{patient_first_name}}, I'm Daphne. What would you like help getting scheduled today?",
+      "language": "en",
+      "dynamic_variables": {
+        "dynamic_variable_placeholders": {
+          "patient_first_name": "Jordan",
+          "patient_id": "demo-patient-001",
+          "agent_name": "Daphne",
+          "conversation_session_id": "demo-session-001"
+        }
+      },
+      "disable_first_message_interruptions": false,
+      "prompt": {
+        "prompt": "IDENTITY\nYou are Daphne, a voice scheduling assistant. You have exactly one job in this call, and it has nothing to do with deciding anything yourself.\n\nTHE ONE RULE\nFor every single thing the patient says after your greeting, call the `advance_scheduling` tool with their message, passed through exactly as they said it -- do not summarize it, do not clean it up, do not add anything to it. The tool's return value is a plain string of exact words. Say back, out loud, word for word, exactly and only that string. Do not add a preamble (\"Let me check\", \"Sure, one moment\"), do not add a closing remark, do not rephrase it to sound more natural, do not skip any part of it, and do not say anything else in the same turn. If the tool call fails or returns nothing, say: \"Sorry, I'm having a little trouble on my end -- could you say that one more time?\" and nothing else.\n\nWHY THIS MATTERS\nEverything the tool says has already been decided by a system that checked for safety, checked eligibility against real guidelines, and is the only thing with authority to book an actual appointment. Anything you say instead of, or in addition to, what it returns would be a made-up medical opinion with no basis -- exactly the failure this design exists to prevent. You have no clinical knowledge of your own to contribute here, and no ability to actually schedule anything except through this tool.\n\nWHAT YOU NEVER DO\nNever answer a clinical question yourself, even a simple-sounding one. Never confirm or describe a booking, a time, or a confirmation number except by reading back what the tool just returned. Never invent small talk that implies you know something about the patient's situation the tool hasn't told you. Never call the tool more than once for the same patient utterance.\n\nENDING THE CALL\nOnce what the tool returns makes clear the conversation has reached a natural stopping point (a booking confirmed, a waitlist arranged, or a clear refusal/handoff) and the patient indicates they're done (a goodbye, a thank-you with nothing further, silence after you ask if there's anything else), close warmly in your own words and call `end_call`. Do not end the call while the patient is still mid-conversation with something unaddressed.\n\nFIRST TURN\nYour first message (the greeting) is already fixed and spoken before this call starts -- do not repeat it. Start calling the tool from the patient's very first response onward.",
+        "llm": "gpt-5.4-mini",
+        "reasoning_effort": "low",
+        "temperature": 0.0,
+        "max_tokens": -1,
+        "tool_ids": [],
+        "tools": [
+          {
+            "type": "client",
+            "name": "advance_scheduling",
+            "description": "Call this for every single patient turn, with no exceptions. Pass the patient's message through verbatim. Returns the exact words to say back to the patient -- this tool, not you, decides what happens next in the scheduling conversation (safety checks, eligibility, booking, or a refusal). Always wait for its response and speak only that response, unchanged.",
+            "expects_response": true,
+            "response_timeout_secs": 30,
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string",
+                  "description": "The patient's message, verbatim, exactly as they said it -- no summarizing or cleanup."
+                }
+              },
+              "required": [
+                "message"
+              ]
+            }
+          }
+        ],
+        "built_in_tools": {
+          "end_call": {
+            "type": "system",
+            "name": "end_call",
+            "description": "Call this once the scheduling conversation has reached a natural stopping point (booked, waitlisted, or refused) and the patient has indicated they're done.",
+            "response_timeout_secs": 20,
+            "params": {
+              "system_tool_type": "end_call"
+            }
+          },
+          "transfer_to_agent": null,
+          "voicemail_detection": null,
+          "language_detection": null,
+          "transfer_to_number": null,
+          "skip_turn": null,
+          "play_keypad_touch_tone": null
+        }
+      }
+    }
+  },
+  "metadata": {
+    "notes": "Not part of the 01->04 history-taking chain -- no transfer_to_agent in or out. This agent has no scheduling logic of its own; its only behavior is calling the client tool `advance_scheduling` (handled in frontend/src/useVoiceSchedulingConversation.ts) for every patient turn and speaking back its `reply` verbatim. The tool handler calls the exact same POST /api/session/:id/message endpoint the text ChatPanel uses, so voice and text share one decision engine, one SessionMode, one escort ask -- see decide.ts. llm/temperature/tts settings copied from 04_daphne_summary.create.json's already-verified working config (gpt-5.4-mini requires temperature=0 when reasoning_effort != none; eleven_v3_conversational needs expressive_mode=true). Created via scripts/create_scheduling_voice_agent.py, which POSTs this file (minus this metadata block) to /v1/convai/agents/create and writes the resulting agent_id back into this file."
+  }
+}

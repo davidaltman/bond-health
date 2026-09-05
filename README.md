@@ -216,7 +216,7 @@ prompt. Prompts tune tone; structure enforces behavior. (Full incident write-up:
 | 3 | Mock scheduling + resolution, including the unhappy path | 1.5h | done — booking + waitlist |
 | 4 | Daphne conversation layer + tone/readiness policy | 1.0h | done — text loop closed |
 | 5 | Session Review pane (real-time signal) | 1.5h | done — per-turn gate trace + flagging |
-| 6 | Eval runner + ~8 scenario cases | 1.0h | done — `npm run eval`, 6 scenarios |
+| 6 | Eval runner + ~8 scenario cases | 1.0h | done — `npm run eval`, 8 scenarios, 128/128 |
 |   | **Total** | **10.0h** | |
 
 README is written continuously, not at the end.
@@ -239,14 +239,25 @@ Features §8). See app-guide's "Resolved since earlier drafts of this document" 
 regression cases. None of this was part of the original estimate; all of it was necessary before "it
 works" meant what it should, or came directly from someone actually using the thing.
 
+Two more landed after that: a pickup-escort ask (colonoscopy prep involves sedation, so before
+booking the agent asks once who can pick the patient up, then books regardless of the answer — see
+app-guide's Features §10 and `server/src/escort.ts`), and a second voice experience that, unlike the
+original agent, actually drives the decision engine rather than observing it — an ElevenLabs agent
+whose only instruction is to call a client tool with what the patient said and speak back exactly
+what it returns (see app-guide's Features §9 and `frontend/src/useVoiceSchedulingConversation.ts`).
+The latter changes the "Explicitly not doing" note on voice below, which described the state before
+this addition.
+
 ## Explicitly not doing (and what I'd build next)
 
-- **Voice, as the primary demo path.** The plumbing is real and verified — signed-URL round trip to
-  ElevenLabs works, and the ledger/decision engine run alongside a live call as an observer (see
-  "Running it" below) — but it's a stretch goal, not the core. Text mode is what actually
-  demonstrates the decision engine *driving* the conversation, since ElevenLabs' own model speaks
-  from its own prompt in voice mode; the engine audits, it doesn't steer. Voice has not been
-  re-verified against the new scheduling gate specifically (see app-guide's "Future improvements").
+- **The original (legacy) voice agent, as anything more than a history-taking demo.** Its plumbing is
+  real and verified — signed-URL round trip to ElevenLabs works — but it was always an observer:
+  ElevenLabs' own model speaks from its own prompt there, and the ledger/decision engine only audit
+  the call afterward, never steer it. That limitation is now specifically scoped to that one legacy
+  agent, not to "voice" generally: a second voice experience (**Voice (scheduling)**, see app-guide's
+  Features §9) closes exactly this gap by having a thin ElevenLabs agent delegate every turn to the
+  same decision engine text mode uses, via a client tool. It has not yet been verified against every
+  scenario over a real mic call end to end (see app-guide's "Future improvements" §3).
 - **Medication refill scenario.** The natural second act, and the sharper safety case — refills need
   a prescriber relationship the agent can't verify. Strong candidate for "next."
 - **Document upload** (pill-bottle photo → low-confidence facts needing confirmation). The
