@@ -25,7 +25,7 @@ may book an appointment.
 
 The prior prototype tried mid-call capture as an agent tool the LLM waited on. It produced
 15-second dead air and made Daphne re-ask questions she had just asked (see
-[`prior-art-daphne-history-demo.md`](prior-art-daphne-history-demo.md), "Fixes applied 2026-08-16").
+`agent_configs/03_daphne_family_history.create.json`'s `metadata.notes`, "Fixes applied 2026-08-16").
 
 So extraction runs server-side and out of band. Turns are posted as they arrive; the conversation
 never awaits a result. A slow or failed extraction degrades what the system *knows*, never what the

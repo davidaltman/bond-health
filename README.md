@@ -182,7 +182,7 @@ prompt; a replay run passed; it broke again on the next real call. Asking one mo
 It only became reliable when the checklist moved *out* of the prompt into tracked state. That's the
 principle here: when something must be reliable, it becomes a gate with state, not a sentence in a
 prompt. Prompts tune tone; structure enforces behavior. (Full incident write-up:
-[`docs/prior-art-daphne-history-demo.md`](docs/prior-art-daphne-history-demo.md).)
+`agent_configs/03_daphne_family_history.create.json`'s `metadata.notes`.)
 
 ---
 
@@ -253,10 +253,11 @@ These are real blockers, not paperwork.
    through call sites. The AWS SDK dependency is gone. `/api/summarize` verified end to end: correct
    extraction, both guideline rules, a familial cluster, a symptom referral, and a data gap all fire
    as they did on Bedrock.
-3. **Prune before sharing.** `transcripts/` contains Bond's NDA'd demo transcript and my own
-   interview-prep notes. Neither belongs in a submission. The prior-art doc in `docs/` also
-   references a previous employer's customers and internal paths. Both are already in git history,
-   so the submission ships from a **separate clean-history repo** — decided, not yet done.
+3. **~~Prune before sharing.~~ Resolved.** `transcripts/` contained Bond's NDA'd demo transcript and
+   my own interview-prep notes; the prior-art doc in `docs/` referenced a previous employer's
+   customers and internal paths. Neither belonged in a submission. Both are removed from the working
+   tree, and git history was rewritten (`git filter-repo`) to remove them from every prior commit too
+   — this repo's history no longer contains that material anywhere.
 4. **Cost.** Per-turn extraction plus a decision pass on every turn is more model calls than the old
    post-call design. The ElevenLabs sandbox has roughly 93k characters left on its monthly quota,
    which is enough for demo and eval runs but not for careless looping. If it becomes a real

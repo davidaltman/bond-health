@@ -8,9 +8,10 @@
  *
  * This call is never in the conversational critical path. The prior prototype
  * made mid-call capture an agent tool the LLM waited on, which produced
- * 15-second dead air and duplicate questions (see
- * ../../docs/prior-art-daphne-history-demo.md). Here a slow or failed
- * extraction degrades what the system knows, never what the patient hears.
+ * 15-second dead air and duplicate questions (see this project's
+ * agent-config commit history for the incident write-up). Here a slow or
+ * failed extraction degrades what the system knows, never what the patient
+ * hears.
  */
 import { completeJson } from "./llm.js";
 import {

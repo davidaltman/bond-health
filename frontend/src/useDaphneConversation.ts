@@ -43,8 +43,7 @@ export function useDaphneConversation(
   /**
    * Hands a turn to the ledger. Deliberately fire-and-forget: the prior
    * prototype awaited mid-call capture inside the agent and produced 15-second
-   * silences (docs/prior-art-daphne-history-demo.md). Extraction failing should
-   * cost us a fact, never the conversation.
+   * silences. Extraction failing should cost us a fact, never the conversation.
    */
   const recordTurn = useCallback((role: TranscriptRole, text: string) => {
     const sessionId = sessionIdRef.current;

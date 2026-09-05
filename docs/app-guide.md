@@ -192,8 +192,7 @@ pure unit checks; anything that touches the mock calendar goes through the live-
 The live-server suite drives the actual server over HTTP (no engine mocking), prints every turn's ledger operations,
 signals, and decision, then a final fact table, resolution, and pass/fail per assertion. ~1-5 seconds
 per patient turn (each is a real model call), roughly a minute for all six scenarios. Non-zero exit on
-any failure. `harness_inputs/bond_daphne_repetition_regression_2026-08-16.json` is a leftover from the
-prior-art prototype and is deliberately skipped (no `turns` array) — it's not part of this suite.
+any failure.
 
 Six scenarios today, one per gate family:
 
@@ -232,12 +231,15 @@ Organized by how much they matter.
   exist yet.
 - **The scheduling-preference bug above.** Currently mid-fix.
 
-**Would matter before this repo is shared with anyone at Bond:**
+**Would have mattered before this repo is shared with anyone at Bond — resolved:**
 
-- **`transcripts/` still contains 13 files of interview-prep notes**, including one named after what
-  appears to be a real person's name, and `docs/prior-art-daphne-history-demo.md` still names a
-  previous employer. Both are already committed to this repo's git history. The README has flagged
-  this as an open item since early in the build; it is still open.
+- **`transcripts/` contained interview-prep notes**, including files named after a real person, and
+  `docs/prior-art-daphne-history-demo.md` named a previous employer's customers and internal system
+  paths. Both were removed from the working tree, and `git filter-repo` rewrote history to strip
+  them (and the handful of proprietary references embedded in a few `agent_configs/*.json` notes
+  fields, `extraction/timeline_extraction_prompt.md`, and one old README revision) out of every
+  commit, not just the tip. See the repo's own commit history after this note for the confidentiality
+  cleanup commit.
 
 **Would matter for someone extending this, but not for evaluating the demo today:**
 
