@@ -268,10 +268,13 @@ app-guide's Features §11 and §12, and `decide.ts`'s `already_resolved` gate.
   real and verified — signed-URL round trip to ElevenLabs works — but it was always an observer:
   ElevenLabs' own model speaks from its own prompt there, and the ledger/decision engine only audit
   the call afterward, never steer it. That limitation is now specifically scoped to that one legacy
-  agent, not to "voice" generally: a second voice experience (**Voice (scheduling)**, see app-guide's
-  Features §9) closes exactly this gap by having a thin ElevenLabs agent delegate every turn to the
-  same decision engine text mode uses, via a client tool. It has not yet been verified against every
-  scenario over a real mic call end to end (see app-guide's "Future improvements" §3).
+  agent, not to "voice" generally: a second voice experience (internally `voice_scheduling`, labeled
+  just **Voice** in the header — see app-guide's Features §9) closes exactly this gap by having a thin
+  ElevenLabs agent delegate every turn to the same decision engine text mode uses, via a client tool.
+  With it covering everything the legacy agent did and more, the header no longer exposes the legacy
+  agent as a selectable option at all — the code is still there, just not wired to a button. It has
+  not yet been verified against every scenario over a real mic call end to end (see app-guide's
+  "Future improvements" §3).
 - **Medication refill scenario.** The natural second act, and the sharper safety case — refills need
   a prescriber relationship the agent can't verify. Strong candidate for "next."
 - **Document upload** (pill-bottle photo → low-confidence facts needing confirmation). The

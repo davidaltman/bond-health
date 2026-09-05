@@ -83,10 +83,13 @@ decision engine's authored substance, appended verbatim. The eval suite asserts 
 survives character-for-character into what the patient reads. There's no path for the model to
 quietly soften "screening begins at 40" into "usually around your forties."
 
-**Voice (legacy) mode** is structurally different: ElevenLabs' own conversational model speaks from
-its own prompt, and the ledger/decision engine run alongside as an *observer*, updating the side
-panels a beat after Daphne has already spoken. The engine doesn't steer that call; it audits it.
-**Voice (scheduling) mode** does not have this limitation — see feature 9 below.
+The original **voice_legacy** mode is structurally different: ElevenLabs' own conversational model
+speaks from its own prompt, and the ledger/decision engine run alongside as an *observer*, updating
+the side panels a beat after Daphne has already spoken. The engine doesn't steer that call; it audits
+it. It's no longer reachable from the header toggle — see the note at the top of "A tour" — because
+**Voice** (`voice_scheduling` under the hood) does not have this limitation and covers everything it
+did; see feature 9 below. The code (`useDaphneConversation.ts`, the original 4-agent ElevenLabs
+configs) is left in the repo rather than deleted, in case that plumbing is wanted again later.
 
 ### 6. A live review pane, and a loop back into the eval suite
 
@@ -125,20 +128,25 @@ questions never fire, and a red flag still overrides an explicit booking request
 
 ### 9. Voice, driving the same decision engine as text — not just observing it
 
-**Voice (scheduling)** is a second voice experience, separate from the legacy 4-stage demo. The
-ElevenLabs agent behind it (`agent_configs/05_daphne_scheduling_voice.create.json`) has no scheduling
-behavior written into its own prompt at all — its only instruction is to call a tool with whatever the
-patient just said, then speak back exactly what the tool returns, verbatim. That tool
-(`advance_scheduling`, wired in `frontend/src/useVoiceSchedulingConversation.ts`) is a client tool
-(runs in the browser, so no public webhook is needed for local dev) that calls the identical
-`POST /api/session/:id/message` endpoint the text chat uses. Same gates, same `SessionMode`, same
-escort ask below — voice and text are two mouths on one brain, not two independent implementations
-that happen to agree. The one real cost: each turn now round-trips through the same extraction +
-compose pass text mode does, so expect a beat of silence (roughly 1–3s) after speaking before Daphne
-replies, instead of the near-instant response the legacy agents give.
+**Voice** (internally `voice_scheduling`) is a second voice experience, separate from the original
+4-stage demo (`voice_legacy`). The ElevenLabs agent behind it
+(`agent_configs/05_daphne_scheduling_voice.create.json`) has no scheduling behavior written into its
+own prompt at all — its only instruction is to call a tool with whatever the patient just said, then
+speak back exactly what the tool returns, verbatim. That tool (`advance_scheduling`, wired in
+`frontend/src/useVoiceSchedulingConversation.ts`) is a client tool (runs in the browser, so no public
+webhook is needed for local dev) that calls the identical `POST /api/session/:id/message` endpoint the
+text chat uses. Same gates, same `SessionMode`, same escort ask below — voice and text are two mouths
+on one brain, not two independent implementations that happen to agree. The one real cost: each turn
+now round-trips through the same extraction + compose pass text mode does, so expect a beat of silence
+(roughly 1–3s) after speaking before Daphne replies, instead of the near-instant response the legacy
+agent gives.
 
-See it: the **"Voice (scheduling)"** toggle in the header, and
-`frontend/src/components/VoiceSchedulingPanel.tsx`.
+`voice_legacy` is no longer reachable from the header — with `voice_scheduling` covering everything it
+did and then actually driving the engine, keeping both in the toggle was redundant, so the header now
+reads just **Text / Voice** (see "A tour" below). The legacy hook, panel, and its four ElevenLabs
+agent configs are still in the repo, just not wired to a button.
+
+See it: the **"Voice"** toggle in the header, and `frontend/src/components/VoiceSchedulingPanel.tsx`.
 
 ### 10. A pickup escort ask that never blocks
 
@@ -193,22 +201,22 @@ cp server/.env.example server/.env   # fill in OPENAI_API_KEY; BOND_ELEVEN_LABS_
 (cd frontend && npm install && npm run dev)   # http://127.0.0.1:5190
 ```
 
-Open `http://127.0.0.1:5190`. You'll see a header with a **Text / Voice (scheduling) / Voice (legacy)**
-toggle. All but "Voice (legacy)" are driven by the decision engine — pick whichever medium you want to
-test with. Text is the simplest place to see the gates fire turn by turn.
+Open `http://127.0.0.1:5190`. You'll see a header with a **Text / Voice** toggle — both are driven by
+the decision engine (Voice is `voice_scheduling` under the hood; see feature 9). Text is the simplest
+place to see the gates fire turn by turn. (The original observer-only voice agent, `voice_legacy`,
+still exists in code but isn't reachable from this toggle anymore — see feature 9's note and the
+Limitations section below.)
 
-**Left column:** patient name/age controls, plus — only in **Voice (legacy)** — the agent picker and
-Start/Stop buttons for the old 4-stage demo (irrelevant in the other two mediums, since each drives
-its own session from its own center-column panel). Below that, **"What Daphne knows"** — the live fact
+**Left column:** patient name/age controls. Below that, **"What Daphne knows"** — the live fact
 ledger, grouped by who the fact is about, with a "how they sound" strip underneath showing
 tone/hesitation/readiness. That strip is explicitly labeled "not part of the record" — it's signal,
 not fact, and it never becomes one.
 
-**Center column:** the conversation (chat box in text mode, a transcript plus Start/Stop in either
-voice mode), then the **Decision** panel showing the outcome pill (ACT/ASK/STOP/HANDOFF), which gate
-fired, why, and — once a booking or waitlist exists — the confirmation ID and prep instructions, or the
-waitlist ID and next step. Below that, in text mode and Voice (scheduling) — the two mediums the engine
-actually drives — the **Session review** pane with the per-turn trace and flag buttons.
+**Center column:** the conversation (chat box in text mode, a transcript plus Start/Stop in voice
+mode), then the **Decision** panel showing the outcome pill (ACT/ASK/STOP/HANDOFF), which gate fired,
+why, and — once a booking or waitlist exists — the confirmation ID and prep instructions, or the
+waitlist ID and next step. Below that, the **Session review** pane with the per-turn trace and flag
+buttons, present for both Text and Voice since both drive the engine.
 
 **Right column:** a summary panel for the separate post-call timeline feature (`/api/summarize`) —
 this is legacy from the prior-art prototype (see README's "Prior art" section), not part of the
@@ -274,7 +282,7 @@ Hit **"New session"**, click **"Scheduling only"** in the header, then:
 
 ### Try the same conversation over voice
 
-Click **"Voice (scheduling)"** in the header (either session mode works the same way it does in
+Click **"Voice"** in the header (either session mode works the same way it does in
 text), hit **"Start call"**, and allow microphone access. Say the same lines as the text walkthrough
 above, out loud, one at a time, and wait for Daphne to reply before speaking again — she's not
 choosing what to say; she's reading back exactly what the same decision engine returned, so the
@@ -458,7 +466,7 @@ order I'd actually do it, with the reasoning:
 2. **PCP / referral gate.** Currently a silent assumption. Even a minimal version — the agent states
    out loud that this needs a PCP referral, without actually gating on it — would convert a silent gap
    into a stated one, which is the standard the rest of the decision engine holds itself to.
-3. **Human-verify Voice (scheduling) against a real mic call, end to end.** It's built (the ElevenLabs
+3. **Human-verify Voice against a real mic call, end to end.** It's built (the ElevenLabs
    agent delegates every turn to the decision engine via a client tool — see feature 9 above) and
    passes the same manual smoke check text mode did, but nobody has yet run every scenario (red flag,
    ambivalence, no-slots waitlist, escort decline) through an actual live call to confirm ASR

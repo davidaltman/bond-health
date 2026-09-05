@@ -16,18 +16,19 @@ import { fetchAgents, summarizeTranscript } from "./api";
 import type { AgentOption, SessionMode, SummarizeResponse } from "./types";
 
 // "voice_legacy" is the original 4-stage history-taking demo (observer
-// only -- see useDaphneConversation.ts). "voice_scheduling" is voice driving
-// the same decision engine text mode does (see
-// useVoiceSchedulingConversation.ts). Kept as three flat options rather than
-// a nested toggle under "Voice," since collapsing them back into one control
-// is exactly the ambiguity that prompted separating them.
+// only -- see useDaphneConversation.ts). It's no longer reachable from the
+// header toggle below -- "voice_scheduling" (labeled just "Voice" there) now
+// covers everything it did, and actually drives the decision engine besides
+// -- but the type/hook/component are left in place rather than deleted, in
+// case that plumbing (the original 4-agent ElevenLabs handoff) is wanted
+// again later.
 type Medium = "text" | "voice_legacy" | "voice_scheduling";
 
 export default function App() {
-  // Text is the default because it is the only medium where Daphne's reply is
-  // produced by the decision engine. Voice runs the same ledger and gates, but
-  // the ElevenLabs agent speaks from its own prompt, so there the engine
-  // observes rather than drives -- a distinction worth being able to see.
+  // Text is the default; Voice (voice_scheduling under the hood) drives the
+  // identical decision engine over a mic instead of a text box -- see
+  // useVoiceSchedulingConversation.ts. Both are wired up below regardless of
+  // which is selected.
   const [medium, setMedium] = useState<Medium>("text");
   // Isolated on purpose: a session started in one mode can't turn into the
   // other mid-conversation (see decide.ts's SessionMode and Session.mode).
@@ -170,8 +171,7 @@ export default function App() {
         <div className="medium-toggle">
           {([
             { id: "text", label: "Text" },
-            { id: "voice_scheduling", label: "Voice (scheduling)" },
-            { id: "voice_legacy", label: "Voice (legacy)" },
+            { id: "voice_scheduling", label: "Voice" },
           ] as Array<{ id: Medium; label: string }>).map((option) => (
             <button
               key={option.id}
