@@ -17,7 +17,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { extractTurn } from "./extract-turn.js";
-import { decide, type Decision } from "./decide.js";
+import { decide, type Decision, type SessionMode } from "./decide.js";
 import { composeReply, type ComposedReply } from "./compose.js";
 import { scheduleScreening, type SchedulingResult } from "./scheduler.js";
 import { describePreference, parseSchedulingPreference, type SchedulingPreference } from "./preference.js";
@@ -67,6 +67,11 @@ export interface Session {
   createdAt: string;
   patientName: string | null;
   patientAge: number | null;
+  /** See decide.ts's SessionMode. Fixed for the life of the session -- start
+   *  a new session to change it, rather than switching mid-conversation,
+   *  since the two modes ask genuinely different questions about the same
+   *  patient and mixing them mid-session has no well-defined meaning. */
+  mode: SessionMode;
   turns: SessionTurn[];
   ledger: LedgerState;
   signals: ConversationSignals | null;
@@ -90,12 +95,17 @@ export interface Session {
 
 const sessions = new Map<string, Session>();
 
-export function createSession(patientName?: string | null, patientAge?: number | null): Session {
+export function createSession(
+  patientName?: string | null,
+  patientAge?: number | null,
+  mode: SessionMode = "full",
+): Session {
   const session: Session = {
     id: randomUUID(),
     createdAt: new Date().toISOString(),
     patientName: patientName ?? null,
     patientAge: typeof patientAge === "number" && Number.isFinite(patientAge) ? patientAge : null,
+    mode,
     turns: [],
     ledger: createLedger(),
     signals: null,
@@ -248,6 +258,7 @@ function runDecision(session: Session, turn: number): void {
     askCounts: session.askCounts,
     bookingRequested: session.bookingRequested,
     schedulingPreference: session.schedulingPreference,
+    mode: session.mode,
   });
 
   if (decision.missingSlot) {
@@ -261,8 +272,8 @@ function runDecision(session: Session, turn: number): void {
   if (decision.gate === "readiness") session.bookingRequested = false;
   else if (decision.gate === "scheduling" || decision.outcome === "ACT") session.bookingRequested = true;
 
-  if (decision.outcome === "ACT" && decision.recommendation) {
-    const result = scheduleScreening(decision.recommendation.bookWithinDays, session.schedulingPreference);
+  if (decision.outcome === "ACT" && decision.bookWithinDays != null) {
+    const result = scheduleScreening(decision.bookWithinDays, session.schedulingPreference);
     session.resolution = result;
     if (result.status === "booked") {
       const preferenceNote =
@@ -339,6 +350,7 @@ export function exportScenario(session: Session, name: string): Record<string, u
     }`,
     patientName: session.patientName,
     patientAge: session.patientAge,
+    sessionMode: session.mode,
     turns,
     expect: {
       finalOutcome: session.decisions.at(-1)?.outcome ?? null,

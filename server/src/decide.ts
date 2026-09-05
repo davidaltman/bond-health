@@ -40,6 +40,21 @@ import {
 
 export type Outcome = "ACT" | "ASK" | "STOP" | "HANDOFF";
 
+/**
+ * "full" runs every gate, same as always: the engine has to establish
+ * screening history, family history, and age before it will say anything is
+ * indicated at all. "scheduling_only" skips the sufficiency and eligibility
+ * gates entirely and treats the booking itself as already appropriate -- the
+ * shape of a patient who already knows they need this (a PCP referral, a
+ * standing order, a patient who's already had the guideline conversation
+ * elsewhere) and just wants it on the calendar, without being re-asked
+ * questions this app has no way to act differently on anyway. Scope and
+ * safety are never skippable in either mode -- a red flag or an out-of-scope
+ * question gets exactly the same handling regardless of why the session
+ * started.
+ */
+export type SessionMode = "full" | "scheduling_only";
+
 export type GateName =
   | "scope"
   | "safety"
@@ -63,6 +78,13 @@ export type GateName =
  */
 const MAX_ASKS_PER_SLOT = 3;
 
+/** Used for ACT in scheduling-only mode, where there is no computed
+ *  recommendation to read a window from. The request is treated as already
+ *  medically appropriate, so this is a routine, no-special-urgency window
+ *  rather than a guess at clinical priority -- see requirements.ts's
+ *  bookingWindowDays for how the "full" mode equivalent is derived. */
+const SCHEDULING_ONLY_BOOKING_WINDOW_DAYS = 30;
+
 export interface Decision {
   turn: number;
   outcome: Outcome;
@@ -74,7 +96,12 @@ export interface Decision {
   say: string;
   /** Fact ids consulted, so a reviewer can see the basis rather than trust it. */
   evidence: string[];
+  /** Null in scheduling_only mode, since eligibility is never computed there. */
   recommendation: ScreeningRecommendation | null;
+  /** Set only on ACT. Reads from the recommendation in "full" mode, or falls
+   *  back to SCHEDULING_ONLY_BOOKING_WINDOW_DAYS when there is none, so the
+   *  scheduler always has a window to book against regardless of mode. */
+  bookWithinDays: number | null;
 }
 
 export interface DecisionInput {
@@ -98,12 +125,15 @@ export interface DecisionInput {
   /** Set once the patient has given a day/time preference, or null while
    *  still waiting on one. See preference.ts. */
   schedulingPreference: SchedulingPreference | null;
+  /** See SessionMode. Defaults to "full" at the session level; every
+   *  DecisionInput is expected to set it explicitly. */
+  mode: SessionMode;
 }
 
 export function decide(input: DecisionInput): Decision {
-  const { turn, facts, signals } = input;
+  const { turn, facts, signals, mode } = input;
   const readings = readSlots(facts);
-  const base = { turn, evidence: facts.map((fact) => fact.id), recommendation: null };
+  const base = { turn, evidence: facts.map((fact) => fact.id), recommendation: null, bookWithinDays: null };
 
   const exhausted = (slot: string) => (input.askCounts[slot] ?? 0) >= MAX_ASKS_PER_SLOT;
   const giveUp = (slot: string, what: string): Decision => ({
@@ -164,52 +194,62 @@ export function decide(input: DecisionInput): Decision {
     };
   }
 
-  // --- Gate 3: sufficiency -------------------------------------------------
-  // Asks for the single highest-value missing item. Not a questionnaire: the
-  // required set is short by design, and this returns after the first gap.
-  for (const requirement of REQUIRED_SLOTS) {
-    const reading = readSlot(readings, requirement.slot);
-    if (isSatisfied(requirement, reading)) continue;
-    if (exhausted(requirement.slot)) return giveUp(requirement.slot, "your screening history");
-    return {
-      ...base,
-      outcome: "ASK",
-      gate: "sufficiency",
-      reason: `Missing ${requirement.slot}. ${requirement.why}`,
-      missingSlot: requirement.slot,
-      say: requirement.question,
-    };
+  let recommendation: ScreeningRecommendation | null = null;
+
+  if (mode === "full") {
+    // --- Gate 3: sufficiency -------------------------------------------------
+    // Asks for the single highest-value missing item. Not a questionnaire: the
+    // required set is short by design, and this returns after the first gap.
+    // Skipped entirely in scheduling_only mode -- see SessionMode.
+    for (const requirement of REQUIRED_SLOTS) {
+      const reading = readSlot(readings, requirement.slot);
+      if (isSatisfied(requirement, reading)) continue;
+      if (exhausted(requirement.slot)) return giveUp(requirement.slot, "your screening history");
+      return {
+        ...base,
+        outcome: "ASK",
+        gate: "sufficiency",
+        reason: `Missing ${requirement.slot}. ${requirement.why}`,
+        missingSlot: requirement.slot,
+        say: requirement.question,
+      };
+    }
+
+    if (input.patientAge == null) {
+      return {
+        ...base,
+        outcome: "ASK",
+        gate: "sufficiency",
+        reason: "Age is unknown and determines whether screening is indicated at all.",
+        missingSlot: null,
+        say: "How old are you?",
+      };
+    }
+
+    // --- Gate 4: eligibility -------------------------------------------------
+    // The guideline table decides this, not the model. Skipped in
+    // scheduling_only mode: there is no "not yet indicated" outcome there,
+    // because the mode's whole premise is that eligibility was already
+    // decided elsewhere.
+    const familyHistory = readSlot(readings, "colorectal_cancer_family_history");
+    recommendation = recommendScreening(input.patientAge, familyHistory);
+
+    if (!recommendation.indicated) {
+      return {
+        ...base,
+        recommendation,
+        outcome: "ASK",
+        gate: "eligibility",
+        reason: `Not yet indicated: age ${input.patientAge} is below the start age of ${recommendation.startAge}. ${recommendation.rationale}`,
+        missingSlot: null,
+        say:
+          `Based on what you've told me, routine screening starts at ${recommendation.startAge} for you, ` +
+          `so there's nothing due yet. Would you like me to note a reminder for then?`,
+      };
+    }
   }
 
-  if (input.patientAge == null) {
-    return {
-      ...base,
-      outcome: "ASK",
-      gate: "sufficiency",
-      reason: "Age is unknown and determines whether screening is indicated at all.",
-      missingSlot: null,
-      say: "How old are you?",
-    };
-  }
-
-  // --- Gate 4: eligibility -------------------------------------------------
-  // The guideline table decides this, not the model.
-  const familyHistory = readSlot(readings, "colorectal_cancer_family_history");
-  const recommendation = recommendScreening(input.patientAge, familyHistory);
   const withRecommendation = { ...base, recommendation };
-
-  if (!recommendation.indicated) {
-    return {
-      ...withRecommendation,
-      outcome: "ASK",
-      gate: "eligibility",
-      reason: `Not yet indicated: age ${input.patientAge} is below the start age of ${recommendation.startAge}. ${recommendation.rationale}`,
-      missingSlot: null,
-      say:
-        `Based on what you've told me, routine screening starts at ${recommendation.startAge} for you, ` +
-        `so there's nothing due yet. Would you like me to note a reminder for then?`,
-    };
-  }
 
   // Symptoms get checked once, only at the point where a booking is otherwise
   // possible. Asking earlier would be an interrogation; not asking at all would
@@ -259,7 +299,9 @@ export function decide(input: DecisionInput): Decision {
       say: ambivalentNow
         ? "Plenty of people feel exactly that way about it, and there's no rush from my side. " +
           "What's the part that puts you off most? I'd rather talk that through than push you."
-        : `${recommendation.patientSummary} Would you like me to find you an appointment?`,
+        : recommendation
+          ? `${recommendation.patientSummary} Would you like me to find you an appointment?`
+          : "Let's get that scheduled for you. Would you like me to find you an appointment?",
     };
   }
 
@@ -288,7 +330,10 @@ export function decide(input: DecisionInput): Decision {
     ...withRecommendation,
     outcome: "ACT",
     gate: "act",
-    reason: `All gates passed: screening indicated (${recommendation.riskTier}), symptoms addressed, patient has asked to proceed.`,
+    bookWithinDays: recommendation?.bookWithinDays ?? SCHEDULING_ONLY_BOOKING_WINDOW_DAYS,
+    reason: recommendation
+      ? `All gates passed: screening indicated (${recommendation.riskTier}), symptoms addressed, patient has asked to proceed.`
+      : "Scheduling-only session: no eligibility check performed, symptoms addressed, patient has asked to proceed.",
     missingSlot: null,
     say: "",
   };

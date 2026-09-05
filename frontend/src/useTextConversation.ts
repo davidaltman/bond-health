@@ -6,6 +6,7 @@ import type {
   Decision,
   Resolution,
   ReviewFlag,
+  SessionMode,
   TraceEvent,
   TranscriptEntry,
 } from "./types";
@@ -21,7 +22,7 @@ let nextEntryId = 0;
  * conversation by a beat and the engine can only observe; text can block, so
  * the engine actually drives.
  */
-export function useTextConversation(patient: { name: string; age?: number }) {
+export function useTextConversation(patient: { name: string; age?: number }, mode: SessionMode = "full") {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [facts, setFacts] = useState<ClinicalFact[]>([]);
   const [signals, setSignals] = useState<ConversationSignals | null>(null);
@@ -57,7 +58,7 @@ export function useTextConversation(patient: { name: string; age?: number }) {
       setIsThinking(true);
       try {
         if (!sessionIdRef.current) {
-          sessionIdRef.current = await createSession(patient.name || "the patient", patient.age);
+          sessionIdRef.current = await createSession(patient.name || "the patient", patient.age, mode);
         }
         const result = await sendMessage(sessionIdRef.current, trimmed);
         setTranscript((current) => [
@@ -80,7 +81,7 @@ export function useTextConversation(patient: { name: string; age?: number }) {
         setIsThinking(false);
       }
     },
-    [isThinking, patient.name, patient.age],
+    [isThinking, patient.name, patient.age, mode],
   );
 
   const flag = useCallback(async (turn: number, note: string) => {
@@ -121,6 +122,7 @@ export function useTextConversation(patient: { name: string; age?: number }) {
     flags,
     isThinking,
     errorMessage,
+    mode,
     send,
     reset,
     flag,

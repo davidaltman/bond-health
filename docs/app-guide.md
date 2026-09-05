@@ -100,9 +100,27 @@ locked in as correct.
 ### 7. A scripted eval harness
 
 `node scripts/replay_session.mjs harness_inputs/*.json` (or `npm run eval` from `server/`) drives the
-live HTTP endpoints — no mocking of the engine itself — against six scripted scenarios and asserts on
+live HTTP endpoints — no mocking of the engine itself — against scripted scenarios and asserts on
 decisions and ledger state, never on prose wording. Exit code is non-zero on any failure, so it works
 as a gate on changes to prompts, gates, or tables.
+
+### 8. Two isolated session modes: full intake, and scheduling-only
+
+The **"Full intake / Scheduling only"** toggle in the header (text mode) starts a genuinely separate
+session per mode, not a visual skin on the same conversation — `decide.ts`'s `SessionMode` decides
+which gates even run. **Full intake** is everything above: sufficiency questions, the eligibility
+check against the guideline table, then safety, readiness, and booking. **Scheduling only** skips the
+sufficiency and eligibility gates entirely — no "have you had one before," no family-history question,
+no guideline check — on the premise that eligibility was already decided somewhere else (a referral, a
+standing order), and goes straight to the safety check and booking. A session's mode is fixed at
+creation; switching the toggle starts a fresh session rather than trying to reinterpret a
+half-finished one, since a "have you had a colonoscopy before" question asked mid-conversation and
+then retroactively un-asked has no coherent meaning.
+
+**Scope and safety are never skippable, in either mode.** A red flag or an out-of-scope question gets
+identical handling whether the session started as scheduling-only or full intake — see
+`harness_inputs/scheduling_only_skips_intake.json`, which asserts both halves of this: the sufficiency
+questions never fire, and a red flag still overrides an explicit booking request.
 
 ---
 
@@ -163,6 +181,21 @@ Now try derailing it — `hit "New session"` first, then:
 Flag any turn in the Session review pane with a note, then hit **Export as eval case** — it downloads
 a JSON file in exactly the shape of the files in `harness_inputs/`.
 
+### Try the isolated scheduling-only path
+
+Hit **"New session"**, click **"Scheduling only"** in the header, then:
+
+1. `I need to get a colonoscopy scheduled, my doctor already referred me.`
+   → `ASK via safety` directly — no "have you had one before," no family-history question. That's the
+   whole point of this mode.
+2. `No bleeding, no weight loss, no changes.`
+   → `ASK via readiness`, with generic wording (no guideline rationale to cite, since eligibility was
+   never computed in this mode).
+3. `Yes, please.`
+   → `ASK via scheduling`.
+4. `Anytime soon works.`
+   → `ACT`, booked. Notice the Decision panel's recommendation is empty here — there was never one.
+
 ---
 
 ## How to test it
@@ -191,10 +224,10 @@ pure unit checks; anything that touches the mock calendar goes through the live-
 
 The live-server suite drives the actual server over HTTP (no engine mocking), prints every turn's ledger operations,
 signals, and decision, then a final fact table, resolution, and pass/fail per assertion. ~1-5 seconds
-per patient turn (each is a real model call), roughly a minute for all six scenarios. Non-zero exit on
-any failure.
+per patient turn (each is a real model call), roughly a minute and a half for all eight scenarios.
+Non-zero exit on any failure.
 
-Seven scenarios today, one per gate family, plus one that pins down a real live bug report:
+Eight scenarios today, one per gate family, plus two that pin down real live bug reports:
 
 | Scenario | Proves |
 |---|---|
@@ -205,6 +238,7 @@ Seven scenarios today, one per gate family, plus one that pins down a real live 
 | `out_of_scope_dosing` | a clinical question gets `STOP`, unconditionally |
 | `no_slots_waitlist` | the unhappy resolution path — waitlist with a real next step |
 | `family_history_correction_after_denial` | a relative's fact volunteered after an earlier family denial still changes the recommendation, a bare "yes" answering Daphne's own proposal is accepted without a repeat, and a plural day name + two-word "after noon" parse correctly — see "Resolved since earlier drafts" below |
+| `scheduling_only_skips_intake` | `SessionMode: "scheduling_only"` truly skips sufficiency/eligibility, and safety still overrides it regardless — see Features §8 |
 
 **The live-to-regression loop:** flag a turn in the Session review pane, export it, drop the file into
 `harness_inputs/`, fill in the `FIXME` with what *should* have happened, and it runs with everything
@@ -221,9 +255,11 @@ Organized by how much they matter.
 
 - **Everything about scheduling is mocked.** Two fake clinics, a hardcoded slot pattern, no real
   clinic integration, no insurance eligibility check.
-- **No PCP or referral is modeled anywhere.** The engine will book a colonoscopy the moment its gates
-  pass; it never checks whether the patient has a PCP relationship or a referral on file. This is a
-  known, deliberately unaddressed gap — see "Future improvements."
+- **No PCP or referral is *verified* anywhere.** `scheduling_only` mode lets a session skip the
+  eligibility check on the premise that a referral already exists, but nothing actually confirms
+  one does — a patient can select that mode and get booked regardless of whether a real referral is
+  on file. Modeling the difference between "claims to have a referral" and "has a referral we've
+  checked" is a known, deliberately unaddressed gap — see "Future improvements."
 - **No EHR.** Every fact comes from what the patient says in this conversation. This is a stated
   constraint of the exercise, not an oversight, but it means the agent has no way to catch a patient
   misremembering or contradicting an actual record.

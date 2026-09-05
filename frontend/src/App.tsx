@@ -11,7 +11,7 @@ import { SummaryPanel } from "./components/SummaryPanel";
 import { useDaphneConversation } from "./useDaphneConversation";
 import { useTextConversation } from "./useTextConversation";
 import { fetchAgents, summarizeTranscript } from "./api";
-import type { AgentOption, SummarizeResponse } from "./types";
+import type { AgentOption, SessionMode, SummarizeResponse } from "./types";
 
 type Medium = "text" | "voice";
 
@@ -21,6 +21,11 @@ export default function App() {
   // the ElevenLabs agent speaks from its own prompt, so there the engine
   // observes rather than drives -- a distinction worth being able to see.
   const [medium, setMedium] = useState<Medium>("text");
+  // Isolated on purpose: a session started in one mode can't turn into the
+  // other mid-conversation (see decide.ts's SessionMode and Session.mode).
+  // Switching this always starts a fresh session rather than reinterpreting
+  // the current one.
+  const [sessionMode, setSessionMode] = useState<SessionMode>("full");
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [patientName, setPatientName] = useState("David");
@@ -60,7 +65,17 @@ export default function App() {
     loadHistoricalTranscript,
   } = useDaphneConversation(dynamicVariables, patient);
 
-  const text = useTextConversation(patient);
+  const text = useTextConversation(patient, sessionMode);
+
+  function handleSessionModeChange(next: SessionMode) {
+    if (next === sessionMode) return;
+    setSessionMode(next);
+    // A session's mode is fixed at creation (see Session.mode) -- there is no
+    // well-defined way to turn a scheduling-only session into a full-intake
+    // one or back, so switching the toggle starts clean rather than trying to
+    // carry a half-finished conversation across the boundary.
+    text.reset();
+  }
 
   const activeFacts = medium === "text" ? text.facts : facts;
   const activeSignals = medium === "text" ? text.signals : signals;
@@ -118,6 +133,24 @@ export default function App() {
       <header className="app-header">
         <AltmanAILogo size={32} />
         <div className="app-header-subtitle">Health intake, from history-taking to resolution</div>
+        {medium === "text" ? (
+          <div className="medium-toggle" title="Fixed per session -- switching starts a new one">
+            <button
+              type="button"
+              className={sessionMode === "full" ? "medium-option medium-option-active" : "medium-option"}
+              onClick={() => handleSessionModeChange("full")}
+            >
+              Full intake
+            </button>
+            <button
+              type="button"
+              className={sessionMode === "scheduling_only" ? "medium-option medium-option-active" : "medium-option"}
+              onClick={() => handleSessionModeChange("scheduling_only")}
+            >
+              Scheduling only
+            </button>
+          </div>
+        ) : null}
         <div className="medium-toggle">
           {(["text", "voice"] as Medium[]).map((option) => (
             <button
@@ -157,6 +190,7 @@ export default function App() {
               transcript={text.transcript}
               isThinking={text.isThinking}
               errorMessage={text.errorMessage}
+              mode={sessionMode}
               onSend={(message) => void text.send(message)}
               onReset={text.reset}
             />

@@ -139,6 +139,16 @@ asks what day or time works before booking anything, rather than silently pickin
 It's a gate, not a courtesy: skipping it means acting on an assumption ("any time is fine") the
 patient never actually stated.
 
+**Two isolated session modes, added after a live bug report asked for exactly this.** A session can
+start as `full` (everything above) or `scheduling_only`, which skips sufficiency and eligibility
+entirely and goes straight to the safety check and booking — for a patient who already knows they
+need this (a referral, a standing order) and shouldn't be re-asked screening-history questions the
+app has no way to act on differently anyway. The two modes are genuinely separate sessions, not a UI
+skin on one conversation: mode is fixed at creation (`Session.mode` in `sessions.ts`), and scope and
+safety run identically in either one — a red flag overrides an explicit booking request regardless of
+which mode the session started in. See `docs/app-guide.md`'s Features §8 and
+`harness_inputs/scheduling_only_skips_intake.json`.
+
 The brief says optimize for fewest steps and shortest time to resolution. So ASK computes the
 **minimum missing set** — the smallest set of facts that would unblock a decision — and asks for the
 highest-value one. It does not run an intake questionnaire. This is where empathy and efficiency
@@ -214,17 +224,20 @@ README is written continuously, not at the end.
 If something slips, phases 5 and 6 shrink before 1–3 do. A working decision layer with a thin
 review pane beats a beautiful pane over an agent that can't decide anything.
 
-Three things landed after phase 6, outside this table: a correctness fix to the scheduling-preference
+Four things landed after phase 6, outside this table: a correctness fix to the scheduling-preference
 parser (it was silently discarding a stated day/time in favor of "soonest" on certain phrasings —
 see app-guide's "Features" §3), a confidentiality cleanup of the repo and its git history (see
-"Open items" below), and a second round of fixes from a live bug report that turned up four more
+"Open items" below), a second round of fixes from a live bug report that turned up four more
 issues at once — two more preference-parsing gaps, a readiness-gate logic hole that made a bare "yes"
 loop, a silent verbatim-repeat when the acknowledgment layer had nothing to say, and (the one that
 actually mattered clinically) a relative's fact volunteered after an earlier family-history denial
-never reaching the recommendation, even though it was captured correctly on the ledger. See
-app-guide's "Resolved since earlier drafts of this document" for the full account and
-`family_history_correction_after_denial` in the eval suite for the regression case. None of this was
-part of the original estimate; all of it was necessary before "it works" meant what it should.
+never reaching the recommendation, even though it was captured correctly on the ledger — and a new
+`scheduling_only` session mode, requested directly off the back of that same bug-report conversation,
+that lets a session skip sufficiency/eligibility entirely and go straight to booking (see app-guide's
+Features §8). See app-guide's "Resolved since earlier drafts of this document" for the fixes and
+`family_history_correction_after_denial` / `scheduling_only_skips_intake` in the eval suite for the
+regression cases. None of this was part of the original estimate; all of it was necessary before "it
+works" meant what it should, or came directly from someone actually using the thing.
 
 ## Explicitly not doing (and what I'd build next)
 
@@ -322,9 +335,9 @@ It prints each turn's ledger operations, signals, and decision, then the final f
 resolution, and acceptance checks. Exit code is non-zero if any check fails, so it works as a gate.
 Roughly one small model call per patient turn, 1–5s each, all off the conversational path.
 
-Seven scenarios, ~100 assertions (the exact count varies by a check or two run to run — see the
-signal-classification note in `docs/app-guide.md`'s Limitations), one per gate plus one regression
-case:
+Eight scenarios, ~120 assertions (the exact count varies by a check or two run to run — see the
+signal-classification note in `docs/app-guide.md`'s Limitations), one per gate plus two regression
+cases:
 
 | Scenario | Asserts |
 |---|---|
@@ -335,6 +348,7 @@ case:
 | `out_of_scope_dosing` | a warfarin dosing question → STOP, whatever else is true |
 | `no_slots_waitlist` | clinical window inside the clinic's lead time → waitlist with a next step |
 | `family_history_correction_after_denial` | a relative's fact volunteered after an earlier family denial still changes the recommendation; a bare "yes" is accepted without a repeat; "fridays after noon" parses correctly |
+| `scheduling_only_skips_intake` | a `scheduling_only` session never asks the sufficiency questions, and safety still overrides it regardless |
 
 Or `npm run eval` from `server/`.
 

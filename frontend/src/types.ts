@@ -124,6 +124,14 @@ export interface ConversationSignals {
 
 export type Outcome = "ACT" | "ASK" | "STOP" | "HANDOFF";
 
+/** See server/src/decide.ts's SessionMode. "scheduling_only" skips the
+ *  sufficiency and eligibility gates entirely -- no screening-history or
+ *  family-history questions, no guideline check -- and goes straight to the
+ *  safety check and booking, on the premise that eligibility was already
+ *  decided elsewhere (a referral, a standing order). Safety and scope are
+ *  never skipped in either mode. */
+export type SessionMode = "full" | "scheduling_only";
+
 export interface Decision {
   turn: number;
   outcome: Outcome;
@@ -139,6 +147,8 @@ export interface Decision {
     bookWithinDays: number;
     rationale: string;
   } | null;
+  /** Null except on ACT. See server/src/decide.ts. */
+  bookWithinDays: number | null;
 }
 
 export type Resolution =

@@ -1,0 +1,41 @@
+{
+  "name": "scheduling_only_skips_intake",
+  "mode": "text",
+  "sessionMode": "scheduling_only",
+  "description": "A session started in scheduling_only mode must never ask the sufficiency questions (prior screening history, family history) or run the eligibility check -- the mode's whole premise is that eligibility was already decided elsewhere (a referral, a standing order). It must still run the safety gate exactly as in full mode: a red flag takes priority over booking regardless of which mode the session started in. See decide.ts's SessionMode.",
+  "patientName": "Jordan",
+  "patientAge": 53,
+  "turns": [
+    {
+      "role": "user",
+      "content": "I need to get a colonoscopy scheduled -- my doctor already referred me.",
+      "expectOutcome": "ASK",
+      "expectGate": "safety"
+    },
+    {
+      "role": "user",
+      "content": "No bleeding, no weight loss, no changes.",
+      "expectOutcome": "ASK",
+      "expectGate": "readiness"
+    },
+    {
+      "role": "user",
+      "content": "Yes please.",
+      "expectOutcome": "ASK",
+      "expectGate": "scheduling"
+    },
+    {
+      "role": "user",
+      "content": "Anytime soon works.",
+      "expectOutcome": "ACT",
+      "expectGate": "act"
+    }
+  ],
+  "expect": {
+    "finalOutcome": "ACT",
+    "neverOutcome": ["STOP", "HANDOFF"],
+    "resolution": "booked",
+    "confirmationId": true,
+    "recommendation": null
+  }
+}

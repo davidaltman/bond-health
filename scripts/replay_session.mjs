@@ -47,7 +47,11 @@ async function runScenario(file) {
   const { sessionId } = await json(`${SERVER}/api/session`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ patientName: scenario.patientName, patientAge: scenario.patientAge }),
+    body: JSON.stringify({
+      patientName: scenario.patientName,
+      patientAge: scenario.patientAge,
+      mode: scenario.sessionMode,
+    }),
   });
 
   const checks = [];
@@ -241,7 +245,16 @@ async function finish(scenario, sessionId, checks, seenOutcomes) {
   // *after* an earlier collective denial must still change the risk tier and
   // start age the final recommendation used, not just sit unread on the
   // ledger. See requirements.ts's aggregateStatus for the fix.
-  if (expect.recommendation) {
+  // `expect.recommendation: null` asserts the opposite -- that no
+  // recommendation was computed at all, which is scheduling_only mode's whole
+  // point (see decide.ts's SessionMode).
+  if (expect.recommendation === null) {
+    checks.push({
+      name: "no recommendation was computed (scheduling_only mode never runs eligibility)",
+      pass: state.decision?.recommendation == null,
+      got: JSON.stringify(state.decision?.recommendation),
+    });
+  } else if (expect.recommendation) {
     const recommendation = state.decision?.recommendation;
     for (const [key, want] of Object.entries(expect.recommendation)) {
       checks.push({

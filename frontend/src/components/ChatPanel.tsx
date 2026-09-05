@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { TranscriptEntry } from "../types";
+import type { SessionMode, TranscriptEntry } from "../types";
 
 /**
  * The text conversation. Every Daphne line here came out of the decision
@@ -10,12 +10,14 @@ export function ChatPanel({
   transcript,
   isThinking,
   errorMessage,
+  mode,
   onSend,
   onReset,
 }: {
   transcript: TranscriptEntry[];
   isThinking: boolean;
   errorMessage: string | null;
+  mode: SessionMode;
   onSend: (text: string) => void;
   onReset: () => void;
 }) {
@@ -38,6 +40,7 @@ export function ChatPanel({
       <div className="panel-header">
         <h2>Conversation</h2>
         <span className="current-badge">The decision engine — type here</span>
+        <span className="mode-badge">{mode === "scheduling_only" ? "Scheduling only" : "Full intake"}</span>
         <button type="button" className="chat-reset" onClick={onReset} disabled={transcript.length === 0}>
           New session
         </button>
@@ -48,8 +51,17 @@ export function ChatPanel({
       <div className="transcript-scroll" ref={scrollRef}>
         {transcript.length === 0 ? (
           <div className="transcript-empty">
-            Say something to Daphne. Try “My doctor keeps bringing up a colonoscopy and I keep
-            putting it off.”
+            {mode === "scheduling_only" ? (
+              <>
+                Skips history questions and goes straight to booking. Say something to Daphne. Try
+                “I need to get a colonoscopy scheduled, my doctor already referred me.”
+              </>
+            ) : (
+              <>
+                Say something to Daphne. Try “My doctor keeps bringing up a colonoscopy and I keep
+                putting it off.”
+              </>
+            )}
           </div>
         ) : null}
         {transcript.map((entry) => (

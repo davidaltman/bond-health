@@ -2,6 +2,7 @@ import type {
   AgentOption,
   ExchangeResult,
   ReviewFlag,
+  SessionMode,
   SummarizeResponse,
   TraceEvent,
   TranscriptEntry,
@@ -36,11 +37,15 @@ export async function fetchSignedUrl(agentId: string): Promise<string> {
 // Turns are posted as they arrive and the results land when they land. Nothing
 // in the conversation ever waits on these -- see docs/phase-1-spec.md.
 
-export async function createSession(patientName: string, patientAge?: number): Promise<string> {
+export async function createSession(
+  patientName: string,
+  patientAge?: number,
+  mode: SessionMode = "full",
+): Promise<string> {
   const response = await fetch(`${SERVER_URL}/api/session`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ patientName, patientAge }),
+    body: JSON.stringify({ patientName, patientAge, mode }),
   });
   const body = await jsonOrThrow<{ sessionId: string }>(response);
   return body.sessionId;

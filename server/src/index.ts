@@ -138,8 +138,9 @@ app.post("/api/summarize", async (req, res) => {
 // ---------------------------------------------------------------------------
 
 app.post("/api/session", (req, res) => {
-  const session = createSession(req.body?.patientName, req.body?.patientAge);
-  res.json({ sessionId: session.id, createdAt: session.createdAt });
+  const mode = req.body?.mode === "scheduling_only" ? "scheduling_only" : "full";
+  const session = createSession(req.body?.patientName, req.body?.patientAge, mode);
+  res.json({ sessionId: session.id, createdAt: session.createdAt, mode: session.mode });
 });
 
 app.post("/api/session/:id/turn", async (req, res) => {
@@ -227,6 +228,7 @@ app.get("/api/session/:id", async (req, res) => {
     sessionId: session.id,
     patientName: session.patientName,
     patientAge: session.patientAge,
+    mode: session.mode,
     turns: session.turns,
     facts: liveFacts(session.ledger),
     allFacts: session.ledger.facts,
