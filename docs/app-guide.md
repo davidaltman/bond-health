@@ -55,12 +55,15 @@ call — see `server/src/preference.ts`), and searches a mocked two-clinic, morn
 inventory for the closest match. If it can't find an exact match, it books the closest thing and says
 so, rather than pretending it matched.
 
-**Known issue, being fixed right now:** a reply like *"Wednesday afternoon works for me"* can get
-misread — the phrase "works for me" is meant to catch "I don't care, whatever's soonest," but it also
-just means "yes, that specific thing is fine," and until the fix lands the code prefers the wrong
-reading, silently discarding the stated day/time in favor of the earliest slot. Fix is in
-`server/src/preference.ts`, uncommitted, not yet re-verified against the eval suite. Don't rely on
-day/time matching being correct until this is closed out.
+**Fixed as of this writing:** a reply like *"Wednesday afternoon works for me"* used to get misread —
+the phrase "works for me" was meant to catch "I don't care, whatever's soonest," but it also just
+means "yes, that specific thing is fine," and the code preferred the wrong reading, silently
+discarding the stated day/time in favor of the earliest slot. `preference.ts` now only treats
+affirmation phrases ("works for me," "up to you," "you pick") as "no preference" when no day/time was
+also named in the same reply — unambiguous phrases (`asap`, `soonest`, `as soon as`) still always mean
+soonest. Pinned down by `scripts/test_preference.mjs`, a deterministic unit check with no server, no
+model call, and no dependence on the real calendar date (see the day/time-matching limitation below
+for why that last part matters).
 
 ### 4. Mock resolution with an honest unhappy path
 
@@ -170,10 +173,23 @@ behavior and the voice-mode observer relationship live.
 **Scripted, from the terminal — the real regression gate:**
 
 ```bash
-node scripts/replay_session.mjs harness_inputs/*.json
+npm run eval   # from server/: runs both of the below in sequence
 ```
 
-This drives the actual server over HTTP (no engine mocking), prints every turn's ledger operations,
+which is two layers:
+
+```bash
+npx tsx scripts/test_preference.mjs             # deterministic, no server, no clock, <1s
+node scripts/replay_session.mjs harness_inputs/*.json   # live server, real model calls, ~1min
+```
+
+`test_preference.mjs` exists specifically because the scheduling-preference parsing bug (above) has
+nothing to do with dates or the server, but the scenario suite's booking assertions inherit whatever
+day it happens to be run on — asserting the exact parsing bug there would have meant a regression test
+that only fails on 5 days out of 7 (see the day/time-matching limitation below). Pure logic bugs get
+pure unit checks; anything that touches the mock calendar goes through the live-server suite instead.
+
+The live-server suite drives the actual server over HTTP (no engine mocking), prints every turn's ledger operations,
 signals, and decision, then a final fact table, resolution, and pass/fail per assertion. ~1-5 seconds
 per patient turn (each is a real model call), roughly a minute for all six scenarios. Non-zero exit on
 any failure. `harness_inputs/bond_daphne_repetition_regression_2026-08-16.json` is a leftover from the

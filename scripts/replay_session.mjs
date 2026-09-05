@@ -237,6 +237,21 @@ async function finish(scenario, sessionId, checks, seenOutcomes) {
     });
   }
 
+  // Pins down the scheduling-preference bug: a reply that both states a day/
+  // time AND uses an affirmation phrase ("works for me") must not silently
+  // fall back to "soonest, matched" -- see preference.ts's AMBIGUOUS_SOONEST
+  // handling. `false` here means "closest available, not exact," which is
+  // the honest outcome for a preference this scenario's mock calendar has no
+  // exact slot for.
+  if (typeof expect.matchedPreference === "boolean") {
+    const booked = state.resolution?.status === "booked";
+    checks.push({
+      name: `booking ${expect.matchedPreference ? "exactly matched" : "did not exactly match"} the stated preference`,
+      pass: booked && state.resolution.matchedPreference === expect.matchedPreference,
+      got: booked ? `matchedPreference=${state.resolution.matchedPreference}` : (state.resolution?.status ?? "none"),
+    });
+  }
+
   for (const wanted of expect.facts ?? []) {
     const matcher = new RegExp(wanted.match, "i");
     const found = live.find(

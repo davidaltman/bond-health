@@ -38,8 +38,19 @@ const WEEKDAYS = [
 // "as soon as" (not "as soon as possible") deliberately, so it also catches
 // "as soon as you can" and "as soon as you're able" -- the phrase people
 // actually say, not the canonical form of it.
-const SOONEST_PATTERN =
-  /\bas soon as\b|\basap\b|\bsoonest\b|\bearliest\b|\bwhenever\b|\bany ?time\b|\bno preference\b|don'?t care|doesn'?t matter|\byou pick\b|\bup to you\b|works for me|whatever works/i;
+//
+// Unambiguous: these only ever mean "I have no preference, take the soonest
+// opening." Checked regardless of anything else in the reply.
+const UNAMBIGUOUS_SOONEST_PATTERN =
+  /\bas soon as\b|\basap\b|\bsoonest\b|\bearliest\b|\bwhenever\b|\bany ?time\b|\bno preference\b|don'?t care|doesn'?t matter/i;
+
+// Ambiguous: these read as "no preference" on their own ("whatever works"),
+// but also as a plain affirmation of a day/time just stated in the same
+// breath ("Wednesday afternoon works for me"). Only treated as "soonest" when
+// no day or time was actually named -- otherwise they'd silently override the
+// exact thing the patient just said, which is worse than not recognizing a
+// preference at all.
+const AMBIGUOUS_SOONEST_PATTERN = /\byou pick\b|\bup to you\b|works for me|whatever works/i;
 
 /**
  * Returns null only when the reply carries no scheduling signal at all -- the
@@ -52,15 +63,18 @@ export function parseSchedulingPreference(text: string): SchedulingPreference | 
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  const soonest = SOONEST_PATTERN.test(trimmed);
   const dayOfWeek = WEEKDAYS.findIndex((day) => new RegExp(`\\b${day}\\b`, "i").test(trimmed));
-  const timeOfDay: TimeOfDay | null = /\bmorning\b/i.test(trimmed)
+  const timeOfDay: TimeOfDay | null = /\bmornings?\b/i.test(trimmed)
     ? "morning"
-    : /\bafternoon\b|\bevening\b/i.test(trimmed)
+    : /\bafternoons?\b|\bevenings?\b/i.test(trimmed)
       ? "afternoon"
       : null;
+  const namedSomething = dayOfWeek !== -1 || timeOfDay !== null;
 
-  if (!soonest && dayOfWeek === -1 && !timeOfDay) return null;
+  const soonest =
+    UNAMBIGUOUS_SOONEST_PATTERN.test(trimmed) || (!namedSomething && AMBIGUOUS_SOONEST_PATTERN.test(trimmed));
+
+  if (!soonest && !namedSomething) return null;
 
   return { raw: trimmed, dayOfWeek: dayOfWeek === -1 ? null : dayOfWeek, timeOfDay, soonest };
 }
