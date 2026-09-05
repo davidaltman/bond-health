@@ -26,6 +26,7 @@
 import type { EscortContact } from "./escort.js";
 import type { ClinicalFact, ConversationSignals } from "./ledger.js";
 import type { SchedulingPreference } from "./preference.js";
+import type { ShippingAddress } from "./shipping.js";
 import {
   RED_FLAG_QUESTION,
   REQUIRED_SLOTS,
@@ -64,6 +65,7 @@ export type GateName =
   | "eligibility"
   | "scheduling"
   | "escort"
+  | "shipping"
   | "already_resolved"
   | "stuck"
   | "act";
@@ -87,6 +89,28 @@ const MAX_ASKS_PER_SLOT = 3;
  *  bookingWindowDays for how the "full" mode equivalent is derived. */
 const SCHEDULING_ONLY_BOOKING_WINDOW_DAYS = 30;
 
+/**
+ * Recognizes a question about a booking that already exists (the date, the
+ * confirmation number, the clinic) so the already_resolved gate can answer
+ * it instead of repeating the same "you're all set" line no matter what was
+ * asked -- the exact bug a live transcript turned up: "what's the date
+ * again?" three times in a row got the identical non-answer each time. This
+ * is the one place decide() looks at raw turn text rather than structured
+ * state, because there is nothing to extract into a fact here -- the answer
+ * already exists, in full, on the booking made earlier this session.
+ */
+const BOOKING_DETAIL_PATTERN = /\b(date|when|day|time|calendar|confirm(ation|ed)?|clinic|where)\b/i;
+
+/** Everything already_resolved needs to answer a "what did you book me"
+ *  question, pre-formatted for speech in sessions.ts using the same helper
+ *  the original booking confirmation used -- decide.ts has no reason to
+ *  know how to format a Date. */
+export interface BookingSummary {
+  confirmationId: string;
+  clinic: string;
+  when: string;
+}
+
 export interface Decision {
   turn: number;
   outcome: Outcome;
@@ -94,8 +118,18 @@ export interface Decision {
   gate: GateName;
   reason: string;
   /** For ASK: the one thing being asked for, and the authored wording. */
-  missingSlot: Slot | "red_flag_symptoms" | "readiness" | "scheduling_preference" | "escort_contact" | null;
+  missingSlot:
+    | Slot
+    | "red_flag_symptoms"
+    | "readiness"
+    | "scheduling_preference"
+    | "escort_contact"
+    | "shipping_address"
+    | null;
   say: string;
+  /** Set only on ACT, alongside escortContact -- see that field's note.
+   *  Null until the shipping gate has actually fired once. */
+  shippingAddress: ShippingAddress | null;
   /** Fact ids consulted, so a reviewer can see the basis rather than trust it. */
   evidence: string[];
   /** Null in scheduling_only mode, since eligibility is never computed there. */
@@ -136,6 +170,20 @@ export interface DecisionInput {
    *  schedulingPreference, "asked and declined" is itself a terminal value
    *  here, not something the caller retries. */
   escortContact: EscortContact | null;
+  /** Set once the shipping gate has asked and gotten any reply (including a
+   *  decline), or null while still waiting on that ask. See shipping.ts and
+   *  the "shipping" gate below. Same non-blocking shape as escortContact. */
+  shippingAddress: ShippingAddress | null;
+  /** The current turn's raw text, verbatim. Used only by already_resolved,
+   *  to tell "what's the date again?" apart from anything else a patient
+   *  might say once already booked -- see BOOKING_DETAIL_PATTERN. Every
+   *  other gate in this file reads structured facts/signals instead; this is
+   *  the one deliberate exception, because recalling an already-decided
+   *  answer isn't a new decision that belongs behind extraction. */
+  patientTurn: string;
+  /** The existing booking's details, once one exists, so already_resolved
+   *  has something to answer with. Null before a booking exists. */
+  booking: BookingSummary | null;
   /** See SessionMode. Defaults to "full" at the session level; every
    *  DecisionInput is expected to set it explicitly. */
   mode: SessionMode;
@@ -150,6 +198,7 @@ export function decide(input: DecisionInput): Decision {
     recommendation: null,
     bookWithinDays: null,
     escortContact: null,
+    shippingAddress: null,
   };
 
   const exhausted = (slot: string) => (input.askCounts[slot] ?? 0) >= MAX_ASKS_PER_SLOT;
@@ -201,6 +250,18 @@ export function decide(input: DecisionInput): Decision {
   }
 
   if (input.alreadyBooked) {
+    if (input.booking && BOOKING_DETAIL_PATTERN.test(input.patientTurn)) {
+      return {
+        ...base,
+        outcome: "ASK",
+        gate: "already_resolved",
+        reason: "Booking already exists; patient asked for its details again -- answering, not repeating the generic line.",
+        missingSlot: null,
+        say:
+          `You're booked at ${input.booking.clinic} on ${input.booking.when}. Your confirmation number ` +
+          `is ${input.booking.confirmationId}. Anything else I can help with?`,
+      };
+    }
     return {
       ...base,
       outcome: "ASK",
@@ -364,6 +425,25 @@ export function decide(input: DecisionInput): Decision {
     };
   }
 
+  // --- Gate 8: shipping address ---------------------------------------------
+  // The prep kit has to go somewhere. Asked once, right after the pickup
+  // question -- same non-blocking shape as escort: a decline ("I'll just
+  // grab one at the pharmacy") or an unparseable reply are just as final as
+  // a real address, since a patient managing their own prep kit is a normal
+  // outcome, not a problem to escalate.
+  if (!input.shippingAddress) {
+    return {
+      ...withRecommendation,
+      outcome: "ASK",
+      gate: "shipping",
+      reason: "Pickup contact is settled but no shipping address has been asked for yet.",
+      missingSlot: "shipping_address",
+      say:
+        "Last thing — where should I ship your prep kit so it arrives about a week before your " +
+        "appointment? If you'd rather pick one up yourself at a pharmacy, that's fine too.",
+    };
+  }
+
   // --- ACT -----------------------------------------------------------------
   return {
     ...withRecommendation,
@@ -371,6 +451,7 @@ export function decide(input: DecisionInput): Decision {
     gate: "act",
     bookWithinDays: recommendation?.bookWithinDays ?? SCHEDULING_ONLY_BOOKING_WINDOW_DAYS,
     escortContact: input.escortContact,
+    shippingAddress: input.shippingAddress,
     reason: recommendation
       ? `All gates passed: screening indicated (${recommendation.riskTier}), symptoms addressed, patient has asked to proceed.`
       : "Scheduling-only session: no eligibility check performed, symptoms addressed, patient has asked to proceed.",

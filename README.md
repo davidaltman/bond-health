@@ -216,7 +216,7 @@ prompt. Prompts tune tone; structure enforces behavior. (Full incident write-up:
 | 3 | Mock scheduling + resolution, including the unhappy path | 1.5h | done — booking + waitlist |
 | 4 | Daphne conversation layer + tone/readiness policy | 1.0h | done — text loop closed |
 | 5 | Session Review pane (real-time signal) | 1.5h | done — per-turn gate trace + flagging |
-| 6 | Eval runner + ~8 scenario cases | 1.0h | done — `npm run eval`, 8 scenarios, 128/128 |
+| 6 | Eval runner + ~8 scenario cases | 1.0h | done — `npm run eval`, 8 scenarios, 135/135 |
 |   | **Total** | **10.0h** | |
 
 README is written continuously, not at the end.
@@ -247,6 +247,20 @@ whose only instruction is to call a client tool with what the patient said and s
 what it returns (see app-guide's Features §9 and `frontend/src/useVoiceSchedulingConversation.ts`).
 The latter changes the "Explicitly not doing" note on voice below, which described the state before
 this addition.
+
+A third round, again from live testing (this time over an actual voice call): two mocked logistics
+steps — a prep-kit shipment timed to arrive about a week before the appointment, and a calendar
+invite for the patient's own copy of the appointment, alongside the existing escort invite — plus two
+bug fixes the same call turned up. First, the escort-contact label parser cut the label at the first
+comma, so a reply starting with a filler word ("Yeah, you can send an email to
+myfriend@gmail.com") produced the label "Yeah" instead of the actual contact; fixed in `escort.ts` by
+stripping leading backchannel words first and preferring an extracted email outright when one is
+present. Second, and more visible in the transcript: once a booking existed, *any* further patient
+message — including "what's the date again?", asked three times in a row — got the identical
+"you're all set, anything else?" line, because the `already_resolved` gate never looked at what was
+actually being asked. It now recognizes a question about the existing booking's date, clinic, or
+confirmation number and answers with the real values instead of repeating the generic line — see
+app-guide's Features §11 and §12, and `decide.ts`'s `already_resolved` gate.
 
 ## Explicitly not doing (and what I'd build next)
 
@@ -346,7 +360,7 @@ It prints each turn's ledger operations, signals, and decision, then the final f
 resolution, and acceptance checks. Exit code is non-zero if any check fails, so it works as a gate.
 Roughly one small model call per patient turn, 1–5s each, all off the conversational path.
 
-Eight scenarios, ~120 assertions (the exact count varies by a check or two run to run — see the
+Eight scenarios, ~135 assertions (the exact count varies by a check or two run to run — see the
 signal-classification note in `docs/app-guide.md`'s Limitations), one per gate plus two regression
 cases:
 

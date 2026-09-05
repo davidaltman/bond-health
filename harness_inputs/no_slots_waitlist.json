@@ -30,6 +30,13 @@
     {
       "role": "user",
       "content": "My daughter Sarah can come get me. Her number is 555-908-2211.",
+      "expectOutcome": "ASK",
+      "expectGate": "shipping"
+    },
+    { "role": "agent", "content": "Where should I ship your prep kit so it arrives about a week ahead?" },
+    {
+      "role": "user",
+      "content": "I'll just pick one up at the pharmacy myself.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }

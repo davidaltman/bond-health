@@ -33,6 +33,12 @@
     {
       "role": "user",
       "content": "I don't have anyone, I'll manage on my own.",
+      "expectOutcome": "ASK",
+      "expectGate": "shipping"
+    },
+    {
+      "role": "user",
+      "content": "You can ship it to 88 Elm Street, Unit 4.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }

@@ -59,6 +59,13 @@
     {
       "role": "user",
       "content": "My husband Mark can do it, his cell is 555-201-3344.",
+      "expectOutcome": "ASK",
+      "expectGate": "shipping"
+    },
+    { "role": "agent", "content": "Where should I ship your prep kit so it arrives about a week ahead?" },
+    {
+      "role": "user",
+      "content": "123 Maple Street, Springfield.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }

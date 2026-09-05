@@ -23,7 +23,8 @@
  */
 import { randomUUID } from "node:crypto";
 import type { EscortContact } from "./escort.js";
-import { describePreference, type SchedulingPreference, type TimeOfDay } from "./preference.js";
+import type { ShippingAddress } from "./shipping.js";
+import { type SchedulingPreference, type TimeOfDay } from "./preference.js";
 
 /** Colonoscopy needs prep, a driver, and a scoped room. Nothing inside three
  *  weeks in this mock clinic, which is realistic and makes the tight-window
@@ -51,6 +52,11 @@ export interface Booking {
   confirmationId: string;
   slot: Slot;
   prepInstructions: string[];
+  /** Always present once booked -- `ordered: false` (not absent) when no
+   *  address was given, so "we never asked" and "we asked and they're
+   *  picking it up themselves" both have an explicit, inspectable record
+   *  rather than looking identical. See scheduleDrinkPrepShipment. */
+  prepKitShipment: PrepKitShipment;
   bookedAt: string;
 }
 
@@ -58,13 +64,42 @@ export type SchedulingResult =
   | { status: "booked"; booking: Booking; matchedPreference: boolean }
   | { status: "waitlisted"; waitlistId: string; reason: string; earliestAvailableDays: number; nextStep: string };
 
-export interface EscortInvite {
+export interface CalendarInvite {
   sent: boolean;
-  /** Whatever the patient said, verbatim. There's no real contact book to
-   *  resolve a name against, so the mock invite just echoes it back as the
-   *  "recipient" it would have gone to. */
+  /** Whatever the recipient's label is, verbatim (patient name, or the
+   *  escort's stated name/email). There's no real contact book or calendar
+   *  API involved -- the mock invite just echoes back who it would have
+   *  gone to. */
   to: string | null;
 }
+
+/** Kept as a separate name at the call sites (sessions.ts, scheduler.ts)
+ *  even though the shape is identical to PatientInvite -- "who got the
+ *  escort invite" and "did the patient's own invite go out" are different
+ *  facts about a booking, and giving them different type names makes that
+ *  legible at the call site instead of relying on a comment. */
+export type EscortInvite = CalendarInvite;
+export type PatientInvite = CalendarInvite;
+
+/**
+ * The mocked prep-kit shipment. `ordered: false` (not the shipment being
+ * absent) is the outcome for both "never asked" and "asked, patient's
+ * getting their own" -- see decide.ts's "shipping" gate, which never blocks
+ * a booking on this being present.
+ */
+export interface PrepKitShipment {
+  ordered: boolean;
+  address: string | null;
+  /** ISO timestamp, PREP_KIT_LEAD_DAYS before the appointment. Null when not
+   *  ordered -- there's nothing to arrive. */
+  arrivesAt: string | null;
+  trackingId: string | null;
+}
+
+/** Colonoscopy prep starts the day before the procedure, so the kit needs to
+ *  be in hand well before that -- a week out leaves margin for mail delays
+ *  without requiring next-day shipping in the mock. */
+const PREP_KIT_LEAD_DAYS = 7;
 
 const CLINICS = [
   { name: "Bay Endoscopy Center", offsets: [21, 28, 35] },
@@ -145,7 +180,7 @@ export function holdSlot(slot: Slot): Hold {
   return hold;
 }
 
-export function confirmHold(holdId: string): Booking {
+export function confirmHold(holdId: string, shippingAddress: ShippingAddress | null = null): Booking {
   const hold = holds.get(holdId);
   if (!hold) throw new Error(`No hold ${holdId}`);
   if (hold.expiresAt < Date.now()) {
@@ -153,21 +188,57 @@ export function confirmHold(holdId: string): Booking {
     throw new Error(`Hold ${holdId} expired before confirmation`);
   }
   holds.delete(holdId);
+  const shipment = scheduleDrinkPrepShipment(shippingAddress, hold.slot.startsAt);
   return {
     confirmationId: `BH-${randomUUID().slice(0, 8).toUpperCase()}`,
     slot: hold.slot,
-    prepInstructions: PREP_INSTRUCTIONS,
+    prepInstructions: buildPrepInstructions(shipment),
+    prepKitShipment: shipment,
     bookedAt: new Date().toISOString(),
   };
 }
 
-/** Authored copy, not generated. Same discipline as the guideline table. */
-const PREP_INSTRUCTIONS = [
-  "Clear liquids only for the full day before your appointment.",
-  "Your prep kit arrives by mail about a week ahead, with a start time on the label.",
-  "Arrange a ride home — sedation means you can't drive yourself.",
-  "Keep taking your regular medications unless your care team tells you otherwise.",
-];
+/**
+ * Mocked "order" of the bowel-prep drink kit, timed to land about a week
+ * before the appointment. Real: nothing -- no fulfillment API is called.
+ * This exists so the booking confirmation can say something concrete
+ * (an arrival date, an address) instead of the old static line that
+ * promised a mailed kit without anything backing that claim up.
+ */
+export function scheduleDrinkPrepShipment(address: ShippingAddress | null, appointmentStartsAt: string): PrepKitShipment {
+  if (!address?.provided) return { ordered: false, address: null, arrivesAt: null, trackingId: null };
+  const arrivesAt = new Date(new Date(appointmentStartsAt).getTime() - PREP_KIT_LEAD_DAYS * 24 * 60 * 60 * 1000);
+  return {
+    ordered: true,
+    // Trailing sentence punctuation from the patient's own reply ("123 Main
+    // St, Apt 2.") reads fine on its own but doubles up once this gets
+    // stitched into "ships to {address}, arriving by..." -- stripped here,
+    // display-only, same reasoning as escort.ts's label vs raw. The
+    // ShippingAddress the parser returned stays untouched as the real record.
+    address: address.raw.replace(/[.\s]+$/, ""),
+    arrivesAt: arrivesAt.toISOString(),
+    trackingId: `PK-${randomUUID().slice(0, 8).toUpperCase()}`,
+  };
+}
+
+/** Authored copy, not generated -- same discipline as the guideline table.
+ *  Only the prep-kit line varies, and only on a fact that's actually known
+ *  (whether an address was given), never on a guess. */
+function buildPrepInstructions(shipment: PrepKitShipment): string[] {
+  const prepKitLine = shipment.ordered
+    ? `Your prep kit ships to ${shipment.address}, arriving by ${formatArrival(shipment.arrivesAt!)} — about a week before your appointment.`
+    : "No shipping address on file, so plan to pick up your prep kit at a pharmacy before your appointment.";
+  return [
+    "Clear liquids only for the full day before your appointment.",
+    prepKitLine,
+    "Arrange a ride home — sedation means you can't drive yourself.",
+    "Keep taking your regular medications unless your care team tells you otherwise.",
+  ];
+}
+
+function formatArrival(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+}
 
 /**
  * The full sequence, returning either a confirmation or an honest failure.
@@ -178,6 +249,7 @@ const PREP_INSTRUCTIONS = [
 export function scheduleScreening(
   withinDays: number,
   preference: SchedulingPreference | null = null,
+  shippingAddress: ShippingAddress | null = null,
   now: Date = new Date(),
 ): SchedulingResult {
   const slots = searchSlots(withinDays, now);
@@ -198,7 +270,7 @@ export function scheduleScreening(
   }
 
   const { slot, matched } = pickSlot(slots, preference);
-  return { status: "booked", booking: confirmHold(holdSlot(slot).id), matchedPreference: matched };
+  return { status: "booked", booking: confirmHold(holdSlot(slot).id, shippingAddress), matchedPreference: matched };
 }
 
 /**
@@ -214,6 +286,18 @@ export function scheduleScreening(
 export function sendEscortInvite(contact: EscortContact | null): EscortInvite {
   if (!contact || !contact.provided) return { sent: false, to: null };
   return { sent: true, to: contact.label };
+}
+
+/**
+ * Mocked calendar-invite send for the patient's own copy of the appointment
+ * -- separate from sendEscortInvite, which is for the pickup contact.
+ * Unlike that one, this never has a "declined" outcome: the patient is
+ * always the one being booked, so there's nothing to ask permission for.
+ * Only called from ACT once a booking exists -- see sessions.ts.
+ */
+export function sendPatientInvite(patientName: string | null, _slot: Slot): PatientInvite {
+  if (!patientName) return { sent: false, to: null };
+  return { sent: true, to: patientName };
 }
 
 export { FIRST_AVAILABLE_DAYS };

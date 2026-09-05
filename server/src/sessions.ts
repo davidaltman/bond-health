@@ -17,11 +17,19 @@
  */
 import { randomUUID } from "node:crypto";
 import { extractTurn } from "./extract-turn.js";
-import { decide, type Decision, type SessionMode } from "./decide.js";
+import { decide, type BookingSummary, type Decision, type SessionMode } from "./decide.js";
 import { composeReply, type ComposedReply } from "./compose.js";
-import { scheduleScreening, sendEscortInvite, type EscortInvite, type SchedulingResult } from "./scheduler.js";
+import {
+  scheduleScreening,
+  sendEscortInvite,
+  sendPatientInvite,
+  type EscortInvite,
+  type PatientInvite,
+  type SchedulingResult,
+} from "./scheduler.js";
 import { describePreference, parseSchedulingPreference, type SchedulingPreference } from "./preference.js";
 import { parseEscortReply, type EscortContact } from "./escort.js";
+import { parseShippingAddress, type ShippingAddress } from "./shipping.js";
 import {
   applyOperations,
   createLedger,
@@ -95,6 +103,13 @@ export interface Session {
    *  and `{ sent: false, to: null }` (not null) if ACT ran but no contact was
    *  ever given -- the two are different facts about the session. */
   escortInvite: EscortInvite | null;
+  /** Set once the shipping gate has asked and gotten any reply, including a
+   *  decline. See shipping.ts and decide.ts's "shipping" gate. */
+  shippingAddress: ShippingAddress | null;
+  /** The patient's own mocked calendar-invite outcome, once a booking
+   *  exists. Unlike escortInvite there is no decline case -- see
+   *  sendPatientInvite. */
+  patientInvite: PatientInvite | null;
   /** Reviewer flags raised against specific turns. */
   flags: ReviewFlag[];
   /** Serializes extraction so turns apply in spoken order. */
@@ -125,6 +140,8 @@ export function createSession(
     schedulingPreference: null,
     escortContact: null,
     escortInvite: null,
+    shippingAddress: null,
+    patientInvite: null,
     flags: [],
     queue: Promise.resolve(),
   };
@@ -233,7 +250,13 @@ export async function appendTurn(
         session.escortContact = parseEscortReply(content);
       }
 
-      runDecision(session, turn.index);
+      // Same reasoning again, one gate later: a shipping address only means
+      // anything as the answer to the shipping gate's specific question.
+      if (session.decisions.at(-1)?.gate === "shipping" && !session.shippingAddress) {
+        session.shippingAddress = parseShippingAddress(content);
+      }
+
+      runDecision(session, turn.index, content);
     } catch (error) {
       session.trace.push({
         turn: turn.index,
@@ -267,7 +290,7 @@ export async function appendTurn(
  * suite can assert on decisions without booking anything, and a reviewer can
  * replay the gates without touching the scheduler.
  */
-function runDecision(session: Session, turn: number): void {
+function runDecision(session: Session, turn: number, patientTurn: string): void {
   const decision = decide({
     turn,
     patientAge: session.patientAge,
@@ -278,6 +301,9 @@ function runDecision(session: Session, turn: number): void {
     bookingRequested: session.bookingRequested,
     schedulingPreference: session.schedulingPreference,
     escortContact: session.escortContact,
+    shippingAddress: session.shippingAddress,
+    patientTurn,
+    booking: bookingSummary(session.resolution),
     mode: session.mode,
   });
 
@@ -295,11 +321,16 @@ function runDecision(session: Session, turn: number): void {
   // like me to book it?" -- the exact repetition bug this flag exists to
   // prevent, just one gate later than where it was first found.
   if (decision.gate === "readiness") session.bookingRequested = false;
-  else if (decision.gate === "scheduling" || decision.gate === "escort" || decision.outcome === "ACT")
+  else if (
+    decision.gate === "scheduling" ||
+    decision.gate === "escort" ||
+    decision.gate === "shipping" ||
+    decision.outcome === "ACT"
+  )
     session.bookingRequested = true;
 
   if (decision.outcome === "ACT" && decision.bookWithinDays != null) {
-    const result = scheduleScreening(decision.bookWithinDays, session.schedulingPreference);
+    const result = scheduleScreening(decision.bookWithinDays, session.schedulingPreference, decision.shippingAddress);
     session.resolution = result;
     // Mocked, deliberately -- see escort.ts's header. Runs regardless of
     // booking outcome so `session.escortInvite` always reflects "did we ask
@@ -307,6 +338,10 @@ function runDecision(session: Session, turn: number): void {
     const invite = sendEscortInvite(decision.escortContact);
     session.escortInvite = invite;
     if (result.status === "booked") {
+      // Unlike escortInvite, only sent on an actual booking -- there is no
+      // appointment to put on the patient's own calendar otherwise.
+      const patientInvite = sendPatientInvite(session.patientName, result.booking.slot);
+      session.patientInvite = patientInvite;
       const preferenceNote =
         session.schedulingPreference && !result.matchedPreference
           ? ` I couldn't match ${describePreference(session.schedulingPreference)} exactly, so here's the closest opening I could get:`
@@ -314,10 +349,11 @@ function runDecision(session: Session, turn: number): void {
       const escortNote = invite.sent
         ? ` I've sent a calendar invite to ${invite.to} for the pickup.`
         : "";
+      const patientInviteNote = patientInvite.sent ? " I've added it to your own calendar too." : "";
       decision.say =
         `You're booked.${preferenceNote} ${formatSlot(result.booking.slot)}. Your confirmation number is ` +
-        `${result.booking.confirmationId}, and I'll send the prep instructions over.${escortNote} ` +
-        `${result.booking.prepInstructions[0]}`;
+        `${result.booking.confirmationId}, and I'll send the prep instructions over.${escortNote}${patientInviteNote} ` +
+        `${result.booking.prepInstructions[1]}`;
     } else {
       decision.say = `I couldn't get you in inside the window I'd want for you — ${result.reason} ${result.nextStep}`;
     }
@@ -393,13 +429,34 @@ export function exportScenario(session: Session, name: string): Record<string, u
   };
 }
 
-function formatSlot(slot: { clinic: string; startsAt: string }): string {
-  const when = new Date(slot.startsAt);
-  return `${slot.clinic} on ${when.toLocaleDateString("en-US", {
+/** Turns the resolution into the minimal thing decide.ts's already_resolved
+ *  gate needs to answer "what did you book me" -- null before a booking
+ *  exists, or if the outcome was a waitlist rather than a booking, since
+ *  there's no date to recall in that case either. */
+function bookingSummary(resolution: SchedulingResult | null): BookingSummary | null {
+  if (!resolution || resolution.status !== "booked") return null;
+  return {
+    confirmationId: resolution.booking.confirmationId,
+    clinic: resolution.booking.slot.clinic,
+    when: formatWhen(resolution.booking.slot.startsAt),
+  };
+}
+
+/** Just the date/time half of a slot, in speakable form -- e.g. "Monday,
+ *  September 28 at 9:00 AM". Split out from formatSlot so already_resolved's
+ *  "You're booked at {clinic} on {when}" doesn't have to string-surgery a
+ *  clinic name back out of a combined sentence. */
+function formatWhen(startsAt: string): string {
+  const when = new Date(startsAt);
+  return `${when.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
   })} at ${when.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+}
+
+function formatSlot(slot: { clinic: string; startsAt: string }): string {
+  return `${slot.clinic} on ${formatWhen(slot.startsAt)}`;
 }
 
 function summarizeApplied(applied: AppliedOperation[]): string {

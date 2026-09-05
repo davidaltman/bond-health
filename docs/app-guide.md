@@ -149,7 +149,37 @@ decline ("no one," "I'll figure it out"), a name, or an unparseable mumble are a
 contact was given, a calendar invite is mocked (`sendEscortInvite` in `scheduler.ts` — printed to the
 server log, not actually sent) and the confirmation message says so.
 
-See it: the last `ASK` before `ACT` in either full or scheduling-only mode, and `server/src/escort.ts`.
+See it: the second-to-last `ASK` before `ACT` in either full or scheduling-only mode, and
+`server/src/escort.ts`.
+
+### 11. A prep-kit shipment, timed to the appointment
+
+Right after the pickup question, one more non-blocking ask: where to ship the bowel-prep kit, so it
+arrives about a week ahead of the appointment (`PREP_KIT_LEAD_DAYS` in `scheduler.ts`) rather than the
+old static line that promised a mailed kit without any date or address behind it. Same shape as the
+escort ask — a decline ("I'll grab one at the pharmacy myself") is just as final as a real address,
+and the booking proceeds either way. If an address was given, the confirmation message and the prep
+instructions both name the real arrival date; if not, the instructions say to pick one up at a
+pharmacy instead of silently promising a kit that was never ordered.
+
+See it: the last `ASK` before `ACT`, and `scheduleDrinkPrepShipment` / `buildPrepInstructions` in
+`server/src/scheduler.ts`.
+
+### 12. A calendar invite for the patient, and a memory for booking details after the fact
+
+Once a booking succeeds, a second (also mocked) calendar invite goes out — this one to the patient,
+for their own copy of the appointment, distinct from the escort's pickup invite (`sendPatientInvite`
+vs. `sendEscortInvite` in `scheduler.ts`). And because a live call surfaced this directly: asking about
+an existing booking afterward — "what's the date again?", "what's my confirmation number?" — no
+longer gets the same "you're all set, anything else?" line regardless of the question. The
+`already_resolved` gate now recognizes a question about the booking's date, clinic, or confirmation
+number and answers with the real values pulled from the booking itself, not a canned non-answer. This
+is the one place in `decide.ts` that reads a turn's raw text directly rather than structured
+facts/signals — there's nothing to extract here, the answer already exists on the booking made
+earlier in the session.
+
+See it: ask "what day is my appointment?" or similar after booking, in any medium, and
+`server/src/decide.ts`'s `already_resolved` gate.
 
 ---
 
@@ -201,8 +231,17 @@ decision-engine story. Ignore it unless you're specifically looking at the age-t
 6. `Tuesday morning, if possible.`
    → `ASK via escort` — colonoscopy prep involves sedation, so it asks who can pick you up.
 7. `My husband can grab me, his cell is 555-201-4488.`
-   → `ACT`, with a confirmation ID, prep instructions, and a note that a (mocked) calendar invite
-   went to your husband, all in the Decision panel.
+   → `ASK via shipping` — where to ship the prep kit.
+8. `123 Main Street, Springfield.`
+   → `ACT`, with a confirmation ID, prep instructions (including the prep kit's real arrival date),
+   and notes that mocked calendar invites went to your husband and to you, all in the Decision panel.
+
+Then, in the same session, try one more line:
+
+9. `Wait, what day was that appointment again?`
+   → still `ASK` (gate `already_resolved`), but now it answers with the real clinic, date, and
+   confirmation number instead of repeating "you're all set" — this is the fix for a live bug where
+   that question, asked three different ways in a row, got the identical non-answer every time.
 
 Now try derailing it — `hit "New session"` first, then:
 
@@ -229,8 +268,9 @@ Hit **"New session"**, click **"Scheduling only"** in the header, then:
 3. `Yes, please.`
    → `ASK via scheduling`.
 4. `Anytime soon works.`
-   → `ASK via escort`, then whatever you answer (including a decline) → `ACT`, booked. Notice the
-   Decision panel's recommendation is empty here — there was never one.
+   → `ASK via escort`, then `ASK via shipping`, then whatever you answer to each (including a
+   decline on both) → `ACT`, booked. Notice the Decision panel's recommendation is empty here — there
+   was never one.
 
 ### Try the same conversation over voice
 
@@ -270,14 +310,14 @@ pure unit checks; anything that touches the mock calendar goes through the live-
 The live-server suite drives the actual server over HTTP (no engine mocking), prints every turn's ledger operations,
 signals, and decision, then a final fact table, resolution, and pass/fail per assertion. ~1-5 seconds
 per patient turn (each is a real model call), roughly a minute and a half for all eight scenarios.
-Non-zero exit on any failure.
+Non-zero exit on any failure. Currently 135/135 across all eight.
 
 Eight scenarios today, one per gate family, plus two that pin down real live bug reports:
 
 | Scenario | Proves |
 |---|---|
 | `text_mode_full_journey` | the real product path end to end, plus verbatim authored-text survival |
-| `colonoscopy_never_screened` | happy path through every gate, including the new scheduling ask |
+| `colonoscopy_never_screened` | happy path through every gate, including the scheduling, escort, and shipping asks |
 | `red_flag_bleeding` | safety outranks an explicit booking request |
 | `ambivalent_patient` | complete facts are not consent |
 | `out_of_scope_dosing` | a clinical question gets `STOP`, unconditionally |
@@ -345,6 +385,19 @@ Organized by how much they matter.
     was actually said — is now caught by a deterministic guard in `extract-turn.ts`: an "add" claiming
     "never" without an actual negation word in its own source quote is downgraded to "unknown" rather
     than trusted outright.
+- **A live voice call surfaced two more bugs**, found while testing the new prep-kit-shipment and
+  patient-invite features (Features §11–12) rather than by them:
+  - `escort.ts`'s label extraction cut the contact's reply at the first comma to build the "I've sent
+    a calendar invite to {label}" sentence. A reply starting with a filler word — *"Yeah, you can
+    send an email to myfriend@gmail.com"* — put the comma right after "Yeah", so the invite went "to
+    Yeah." Fixed by stripping leading backchannel words before the clause-boundary search, and by
+    preferring an extracted email outright when one is present, since it's the one unambiguous answer
+    to "where did this actually go."
+  - Once a booking existed, every later patient message got the identical "you're all set, anything
+    else?" line no matter what was asked — a live transcript showed the same "what's the date again?"
+    question, phrased three different ways, getting that exact non-answer three times in a row. The
+    `already_resolved` gate now recognizes a question about the booking's date, clinic, or
+    confirmation number and answers with the real values instead. See Features §12.
 - **`transcripts/` contained interview-prep notes**, including files named after a real person, and
   `docs/prior-art-daphne-history-demo.md` named a previous employer's customers and internal system
   paths. Both were removed from the working tree, and `git filter-repo` rewrote history to strip

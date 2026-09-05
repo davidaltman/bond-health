@@ -42,6 +42,12 @@
     {
       "role": "user",
       "content": "My sister can pick me up, no need for the number.",
+      "expectOutcome": "ASK",
+      "expectGate": "shipping"
+    },
+    {
+      "role": "user",
+      "content": "Send it to 400 Oak Avenue, Apt 2B.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }

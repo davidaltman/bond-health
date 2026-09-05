@@ -25,6 +25,10 @@ export interface EscortContact {
   /** Best-effort phone number extraction, so the mock invite has something
    *  address-shaped to point at. Null if none was stated. */
   phone: string | null;
+  /** Best-effort email extraction. Preferred over a name-derived label when
+   *  present -- see deriveLabel -- since it's the one unambiguous answer to
+   *  "where did the invite actually go." Null if none was stated. */
+  email: string | null;
   /** A short, display-friendly trim of `raw` for use in a sentence like
    *  "I've sent a calendar invite to {label}" -- the full raw reply reads
    *  fine on its own but badly mid-sentence ("...to My husband Mark can pick
@@ -38,23 +42,43 @@ const DECLINE_PATTERN =
   /\b(no\s*one|nobody|none|n\/?a|don'?t have (anyone|one)|not sure|skip|by myself|myself|alone|figure it out)\b/i;
 
 const PHONE_PATTERN = /(\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/;
+const EMAIL_PATTERN = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/;
 
-function deriveLabel(raw: string): string {
-  const boundary = raw.search(/[,.;]|\b(?:his|her|their)\s+(?:cell|number|phone)\b/i);
-  const label = boundary > 0 ? raw.slice(0, boundary) : raw;
-  return label.trim() || raw.trim();
+/**
+ * Backchannel words ("Yeah,", "Um,", "Sure,") that precede the actual
+ * answer. Without stripping these first, the clause-boundary search below
+ * treats the comma after "Yeah," as the end of the label, and everything
+ * that was actually said -- a name, a relationship, an email -- never gets
+ * read. Real transcript that found this: "Yeah, you can send an email to
+ * myfriend@gmail.com" used to derive the label "Yeah". Applied repeatedly
+ * since these often stack ("Yeah, um, ...").
+ */
+const LEADING_FILLER_PATTERN = /^(?:(?:yeah|yep|yes|sure|okay|ok|well|um+|uh+|so|alright|hmm+)[\s,]*)+/i;
+
+function deriveLabel(raw: string, email: string | null): string {
+  // An email is the most concrete, unambiguous answer to "who did the
+  // invite go to" -- prefer it outright over a fuzzy name extraction,
+  // rather than risk exactly the "Yeah" bug this function used to have.
+  if (email) return email;
+  const stripped = raw.replace(LEADING_FILLER_PATTERN, "").trim();
+  const candidate = stripped || raw;
+  const boundary = candidate.search(/[,.;]|\b(?:his|her|their)\s+(?:cell|number|phone)\b/i);
+  const label = boundary > 0 ? candidate.slice(0, boundary) : candidate;
+  return label.trim() || candidate.trim();
 }
 
 export function parseEscortReply(raw: string): EscortContact {
   const trimmed = raw.trim();
   const phoneMatch = trimmed.match(PHONE_PATTERN);
+  const emailMatch = trimmed.match(EMAIL_PATTERN);
   if (DECLINE_PATTERN.test(trimmed)) {
-    return { provided: false, raw: trimmed, phone: null, label: "" };
+    return { provided: false, raw: trimmed, phone: null, email: null, label: "" };
   }
   return {
     provided: !!trimmed,
     raw: trimmed,
     phone: phoneMatch ? phoneMatch[0] : null,
-    label: deriveLabel(trimmed),
+    email: emailMatch ? emailMatch[0] : null,
+    label: deriveLabel(trimmed, emailMatch ? emailMatch[0] : null),
   };
 }

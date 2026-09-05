@@ -44,6 +44,12 @@
     {
       "role": "user",
       "content": "My husband Mark can pick me up, his cell is 555-201-3344.",
+      "expectOutcome": "ASK",
+      "expectGate": "shipping"
+    },
+    {
+      "role": "user",
+      "content": "789 Birch Lane, Riverside.",
       "expectOutcome": "ACT",
       "expectGate": "act"
     }
