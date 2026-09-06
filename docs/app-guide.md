@@ -130,6 +130,10 @@ questions never fire, and a red flag still overrides an explicit booking request
 
 ### 9. Voice, driving the same decision engine as text — not just observing it
 
+See `docs/scheduling-agent-pipeline.md` for the full turn-by-turn walkthrough of everything
+below — every gate, every parser, exact inputs/outputs at each stage, and precisely which
+calls go to ElevenLabs versus OpenAI. This section is the summary.
+
 **Voice** (internally `voice_scheduling`) is a second voice experience, separate from the original
 4-stage demo (`voice_legacy`). The ElevenLabs agent behind it
 (`agent_configs/05_daphne_scheduling_voice.create.json`) has no scheduling behavior written into its
