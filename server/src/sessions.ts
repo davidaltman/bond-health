@@ -17,7 +17,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { extractTurn } from "./extract-turn.js";
-import { decide, type BookingSummary, type Decision, type SessionMode } from "./decide.js";
+import { decide, type BookingSummary, type Decision, type SessionMode, type WaitlistSummary } from "./decide.js";
 import { composeReply, type ComposedReply } from "./compose.js";
 import {
   scheduleScreening,
@@ -296,7 +296,7 @@ function runDecision(session: Session, turn: number, patientTurn: string): void 
     patientAge: session.patientAge,
     facts: liveFacts(session.ledger),
     signals: session.signals,
-    alreadyBooked: session.resolution?.status === "booked",
+    alreadyResolved: session.resolution != null,
     askCounts: session.askCounts,
     bookingRequested: session.bookingRequested,
     schedulingPreference: session.schedulingPreference,
@@ -304,6 +304,7 @@ function runDecision(session: Session, turn: number, patientTurn: string): void 
     shippingAddress: session.shippingAddress,
     patientTurn,
     booking: bookingSummary(session.resolution),
+    waitlist: waitlistSummary(session.resolution),
     mode: session.mode,
   });
 
@@ -429,10 +430,24 @@ export function exportScenario(session: Session, name: string): Record<string, u
   };
 }
 
+/** waitlistSummary's counterpart -- null before a resolution exists, or if
+ *  the outcome was an actual booking rather than a waitlist, since there's
+ *  a confirmation number to recall in that case instead (see bookingSummary
+ *  below). */
+function waitlistSummary(resolution: SchedulingResult | null): WaitlistSummary | null {
+  if (!resolution || resolution.status !== "waitlisted") return null;
+  return {
+    waitlistId: resolution.waitlistId,
+    reason: resolution.reason,
+    nextStep: resolution.nextStep,
+  };
+}
+
 /** Turns the resolution into the minimal thing decide.ts's already_resolved
  *  gate needs to answer "what did you book me" -- null before a booking
  *  exists, or if the outcome was a waitlist rather than a booking, since
- *  there's no date to recall in that case either. */
+ *  there's no date to recall in that case either (see waitlistSummary
+ *  above for that case). */
 function bookingSummary(resolution: SchedulingResult | null): BookingSummary | null {
   if (!resolution || resolution.status !== "booked") return null;
   return {

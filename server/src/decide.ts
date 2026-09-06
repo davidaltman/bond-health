@@ -128,6 +128,17 @@ export interface BookingSummary {
   when: string;
 }
 
+/** already_resolved's other terminal state -- everything it needs to answer
+ *  "what's going on with my appointment" for a session that was waitlisted
+ *  rather than booked. Kept as its own type rather than folded into
+ *  BookingSummary because a waitlist genuinely lacks a clinic/date to give
+ *  back; conflating the two would mean inventing one. */
+export interface WaitlistSummary {
+  waitlistId: string;
+  reason: string;
+  nextStep: string;
+}
+
 export interface Decision {
   turn: number;
   outcome: Outcome;
@@ -166,8 +177,16 @@ export interface DecisionInput {
   patientAge: number | null;
   facts: ClinicalFact[];
   signals: ConversationSignals | null;
-  /** Set once a booking exists, so the engine stops trying to book again. */
-  alreadyBooked: boolean;
+  /** Set once a resolution exists -- booked *or* waitlisted -- so the engine
+   *  stops trying to book again. Both are terminal for this session: a
+   *  waitlisted screening doesn't become "unresolved" just because there's no
+   *  confirmation number, and re-running the gates below on a waitlisted
+   *  session would silently re-attempt scheduling every subsequent turn --
+   *  regenerating a fresh waitlist id, re-sending the mocked escort invite,
+   *  and repeating the same message, forever. That was a real bug, not a
+   *  hypothetical one: found by a scripted patient who never got a
+   *  confirmed slot in the first place. */
+  alreadyResolved: boolean;
   /** How many times each slot has already been asked for in this session. */
   askCounts: Record<string, number>;
   /**
@@ -199,8 +218,16 @@ export interface DecisionInput {
    *  answer isn't a new decision that belongs behind extraction. */
   patientTurn: string;
   /** The existing booking's details, once one exists, so already_resolved
-   *  has something to answer with. Null before a booking exists. */
+   *  has something to answer with. Null before a booking exists, and null
+   *  (not a booking) when the resolution was a waitlist -- see `waitlist`
+   *  for that case instead. */
   booking: BookingSummary | null;
+  /** The existing waitlist's details, once a session resolved to one, so
+   *  already_resolved has something to answer with. Null before a
+   *  resolution exists, and null (not a waitlist) once an actual booking
+   *  exists -- see `booking` for that case instead. Exactly one of
+   *  `booking`/`waitlist` is non-null whenever `alreadyResolved` is true. */
+  waitlist: WaitlistSummary | null;
   /** See SessionMode. Defaults to "full" at the session level; every
    *  DecisionInput is expected to set it explicitly. */
   mode: SessionMode;
@@ -266,15 +293,17 @@ export function decide(input: DecisionInput): Decision {
     };
   }
 
-  if (input.alreadyBooked) {
+  if (input.alreadyResolved) {
     if (CLOSING_PATTERN.test(input.patientTurn)) {
       return {
         ...base,
         outcome: "ASK",
         gate: "already_resolved",
-        reason: "Screening is already booked and the patient signaled they're done -- closing, not re-asking.",
+        reason: `Screening is already ${input.booking ? "booked" : "waitlisted"} and the patient signaled they're done -- closing, not re-asking.`,
         missingSlot: null,
-        say: "Sounds good — take care, and don't hesitate to reach out if anything comes up before your appointment.",
+        say: input.booking
+          ? "Sounds good — take care, and don't hesitate to reach out if anything comes up before your appointment."
+          : "Sounds good — I'll keep watching that cancellation list for you and reach out the moment something opens up. Take care in the meantime.",
       };
     }
     if (input.booking && BOOKING_DETAIL_PATTERN.test(input.patientTurn)) {
@@ -289,13 +318,27 @@ export function decide(input: DecisionInput): Decision {
           `is ${input.booking.confirmationId}. Anything else I can help with?`,
       };
     }
+    if (input.waitlist && BOOKING_DETAIL_PATTERN.test(input.patientTurn)) {
+      return {
+        ...base,
+        outcome: "ASK",
+        gate: "already_resolved",
+        reason: "Waitlisted already; patient asked for its details again -- answering, not repeating the generic line.",
+        missingSlot: null,
+        say:
+          `You're on the cancellation list, reference ${input.waitlist.waitlistId}. ${input.waitlist.reason} ` +
+          `${input.waitlist.nextStep} Anything else I can help with?`,
+      };
+    }
     return {
       ...base,
       outcome: "ASK",
       gate: "already_resolved",
-      reason: "Screening is already booked for this session.",
+      reason: `Screening is already ${input.booking ? "booked" : "waitlisted"} for this session.`,
       missingSlot: null,
-      say: "You're all set for the colonoscopy. Anything else I can help with?",
+      say: input.booking
+        ? "You're all set for the colonoscopy. Anything else I can help with?"
+        : "You're still on the cancellation list for the colonoscopy — I'll reach out the moment something opens up. Anything else I can help with?",
     };
   }
 

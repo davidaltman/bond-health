@@ -16,23 +16,29 @@ import { fetchAgents, summarizeTranscript } from "./api";
 import type { AgentOption, SessionMode, SummarizeResponse } from "./types";
 
 // "voice_legacy" is the original 4-stage history-taking demo (observer
-// only -- see useDaphneConversation.ts). It briefly went unreachable from
-// the header toggle on the theory that "voice_scheduling" (labeled just
-// "Voice") covered everything it did -- it doesn't, in practice: the
-// decision engine's per-turn extraction/decide round trip is a real latency
-// cost the legacy agent never had, since it just talks from its own
-// ElevenLabs-authored prompt with no backend round trip per turn. So legacy
-// is reachable again, but only under "Full intake" -- it never scheduled
-// anything, so it has nothing to offer under "Scheduling only". See
-// handleSessionModeChange's fallback for what happens if you're on legacy
-// and switch away from Full intake.
+// only -- see useDaphneConversation.ts). It talks from its own
+// ElevenLabs-authored prompt with no backend round trip per turn, so it has
+// none of the decision engine's per-turn extraction/decide latency -- which
+// is exactly what you want for history-taking, and exactly what you don't
+// want if you actually need scheduling. "voice_scheduling" (also labeled
+// "Voice") is the decision-engine-driven agent that can actually book slots,
+// but pays that latency cost per turn.
+//
+// Rather than exposing both as separate pills (which meant an extra click,
+// and easy to leave on the wrong one), there is a single "Voice" button
+// whose underlying implementation is picked by sessionMode: "Full intake"
+// -> voice_legacy, "Scheduling only" -> voice_scheduling. Full intake never
+// needed to schedule anything, and scheduling-only never needed intake's
+// history-taking flow, so the mapping is 1:1 and there's no scenario where
+// you'd want the other implementation under a given session mode. See
+// handleSessionModeChange for what happens when you flip session mode while
+// already on Voice.
 type Medium = "text" | "voice_legacy" | "voice_scheduling";
 
 export default function App() {
-  // Text is the default; Voice (voice_scheduling under the hood) drives the
-  // identical decision engine over a mic instead of a text box -- see
-  // useVoiceSchedulingConversation.ts. Both are wired up below regardless of
-  // which is selected.
+  // Text is the default. All four combinations (text/voice x full/scheduling)
+  // are wired up below regardless of which is currently selected -- see the
+  // Medium comment above for how "Voice" resolves to a specific medium.
   const [medium, setMedium] = useState<Medium>("text");
   // Isolated on purpose: a session started in one mode can't turn into the
   // other mid-conversation (see decide.ts's SessionMode and Session.mode).
@@ -92,11 +98,11 @@ export default function App() {
     // decision-engine mediums share this toggle, so both get reset.
     text.reset();
     voiceScheduling.reset();
-    // Legacy has no scheduling-only equivalent -- it never scheduled
-    // anything in either mode -- so leaving it selected while switching to
-    // Scheduling only would show a medium with nothing to offer. Text is the
-    // least surprising fallback since it's the default everywhere else.
-    if (next === "scheduling_only" && medium === "voice_legacy") setMedium("text");
+    // If you're on Voice, stay on Voice, but swap which implementation it
+    // means: Full intake's Voice is always voice_legacy, Scheduling only's
+    // Voice is always voice_scheduling. Text needs no swap -- the same
+    // decision-engine text hook serves both modes (see useTextConversation).
+    if (medium !== "text") setMedium(next === "full" ? "voice_legacy" : "voice_scheduling");
   }
 
   const activeFacts = medium === "text" ? text.facts : medium === "voice_scheduling" ? voiceScheduling.facts : facts;
@@ -175,28 +181,21 @@ export default function App() {
             Scheduling only
           </button>
         </div>
-        <div className="medium-toggle">
-          {(
-            sessionMode === "full"
-              ? ([
-                  { id: "text", label: "Text" },
-                  { id: "voice_scheduling", label: "Voice" },
-                  { id: "voice_legacy", label: "Voice (legacy)" },
-                ] satisfies Array<{ id: Medium; label: string }>)
-              : ([
-                  { id: "text", label: "Text" },
-                  { id: "voice_scheduling", label: "Voice" },
-                ] satisfies Array<{ id: Medium; label: string }>)
-          ).map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              className={medium === option.id ? "medium-option medium-option-active" : "medium-option"}
-              onClick={() => setMedium(option.id)}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="medium-toggle" title="Voice uses the legacy agent under Full intake, the scheduling agent under Scheduling only">
+          <button
+            type="button"
+            className={medium === "text" ? "medium-option medium-option-active" : "medium-option"}
+            onClick={() => setMedium("text")}
+          >
+            Text
+          </button>
+          <button
+            type="button"
+            className={medium !== "text" ? "medium-option medium-option-active" : "medium-option"}
+            onClick={() => setMedium(sessionMode === "full" ? "voice_legacy" : "voice_scheduling")}
+          >
+            Voice
+          </button>
         </div>
       </header>
 

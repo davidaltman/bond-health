@@ -86,10 +86,10 @@ quietly soften "screening begins at 40" into "usually around your forties."
 The original **voice_legacy** mode is structurally different: ElevenLabs' own conversational model
 speaks from its own prompt, and the ledger/decision engine run alongside as an *observer*, updating
 the side panels a beat after Daphne has already spoken. The engine doesn't steer that call; it audits
-it. Selectable as **"Voice (legacy)"** under **Full intake** only (see feature 14) — it never
-scheduled anything, so it's not offered under Scheduling only. The code (`useDaphneConversation.ts`,
-the original 4-agent ElevenLabs configs) is the same code that was ever there; nothing about it
-changed, only whether the header exposes it.
+it. It's what **"Voice"** actually runs when the session mode is **Full intake** (see feature 14) — it
+never scheduled anything, so **Voice** under **Scheduling only** resolves to the decision-engine agent
+instead, not this one. The code (`useDaphneConversation.ts`, the original 4-agent ElevenLabs configs)
+is the same code that was ever there; nothing about it changed, only which session mode routes to it.
 
 ### 6. A live review pane, and a loop back into the eval suite
 
@@ -120,8 +120,8 @@ somewhere else (a referral, a standing order), and goes straight to the safety c
 session's mode is fixed at creation; switching the toggle starts a fresh session rather than trying to
 reinterpret a half-finished one, since a "have you had a colonoscopy before" question asked
 mid-conversation and then retroactively un-asked has no coherent meaning. (Voice (legacy) — feature 14
-— sits outside this: it has no `Session`/`SessionMode` of its own, which is exactly why it's only
-offered under Full intake in the first place.)
+— sits outside this: it has no `Session`/`SessionMode` of its own, which is exactly why **Voice**
+under Full intake resolves to it rather than to the decision-engine agent in the first place.)
 
 **Scope and safety are never skippable, in either mode.** A red flag or an out-of-scope question gets
 identical handling whether the session started as scheduling-only or full intake — see
@@ -229,31 +229,36 @@ recommendation even though it satisfies neither tracked question.
 See it: the first two `ASK via sufficiency` turns after prior-screening history, and
 `REQUIRED_SLOTS` / `familyHistorySlotsForFact` in `server/src/requirements.ts`.
 
-### 14. Voice (legacy), kept reachable for intake specifically
+### 14. Voice (legacy): what "Voice" actually runs under Full intake
 
 Feature 9's decision-engine voice (`voice_scheduling`) round-trips through extraction + decide + compose
 on every turn, the same as text mode — a real ~1-3s beat of silence after the patient stops talking,
 which the original `voice_legacy` agent never had, since it just speaks from its own ElevenLabs prompt
-with no backend call per turn. For a while the header stopped exposing `voice_legacy` as an option at
-all, on the theory that `voice_scheduling` covering everything it functionally did (plus scheduling)
-made it redundant. Live testing under **Full intake** showed that isn't quite right: for a session
-that's *just* history-taking with no booking involved, the latency cost buys nothing, and the older
-agent's own scripted stage-to-stage handoff (personal history → family history → summary) felt faster
-and just as reliable for that narrower job. So `voice_legacy` is selectable again as **"Voice
-(legacy)"**, but only under **Full intake** — it's not offered under **Scheduling only** at all, since
-it never booked anything in either era of this app and has nothing to contribute there.
+with no backend call per turn. Live testing under **Full intake** showed that latency cost buys
+nothing for a session that's *just* history-taking with no booking involved, and the older agent's
+own scripted stage-to-stage handoff (personal history → family history → summary) felt faster and just
+as reliable for that narrower job.
+
+Rather than expose both as separate buttons (an earlier version briefly did — a **"Voice (legacy)"**
+pill next to Text/Voice under Full intake — which meant an extra click and was easy to leave on the
+wrong one for a given session mode), there's a single **"Voice"** button whose implementation is
+chosen by the **Full intake / Scheduling only** toggle: **Full intake → `voice_legacy`**,
+**Scheduling only → `voice_scheduling`**. Full intake never needed to book anything and
+scheduling-only never needed the history-taking flow, so the mapping is 1:1 with no case where you'd
+want the other implementation for a given session mode.
 
 This is a genuine trade-off, not a bug in `voice_scheduling`: the legacy agent is an *observer* (see
 feature 5's note) — the ledger and side panels fill in a beat after Daphne has already spoken, from
 whatever ElevenLabs' own model decided to extract, and there's no `Session`/`SessionMode`/decision
 trace backing that call at all, so the Review pane and eval-export button are unavailable for it (the
-center panel falls back to the plain `TranscriptPanel`). Choosing it is a deliberate trade of the
-decision engine's guarantees for speed, appropriate for a demo of "fast, low-friction intake," not for
-anything that needs to book, escort-check, or ship a prep kit.
+center panel falls back to the plain `TranscriptPanel`). Getting it by selecting **Voice** under
+**Full intake** is a deliberate trade of the decision engine's guarantees for speed, appropriate for a
+demo of "fast, low-friction intake," not for anything that needs to book, escort-check, or ship a prep
+kit.
 
-See it: the **Full intake** toggle, then the **"Voice (legacy)"** button that appears next to
-**Text / Voice** only in that mode; `frontend/src/useDaphneConversation.ts`; and `App.tsx`'s
-`handleSessionModeChange`, which falls back to Text if you're on legacy and switch to Scheduling only.
+See it: the **Full intake** toggle, then the **"Voice"** button; `frontend/src/useDaphneConversation.ts`;
+and `App.tsx`'s `handleSessionModeChange`, which swaps `voice_legacy` for `voice_scheduling` (and back)
+if you're on Voice when you flip the session-mode toggle, rather than dropping you back to Text.
 
 ---
 
@@ -268,12 +273,13 @@ cp server/.env.example server/.env   # fill in OPENAI_API_KEY; BOND_ELEVEN_LABS_
 ```
 
 Open `http://127.0.0.1:5190`. You'll see a header with a **Full intake / Scheduling only** toggle and
-a **Text / Voice** toggle next to it. Text and Voice are both driven by the decision engine (Voice is
-`voice_scheduling` under the hood; see feature 9) — Text is the simplest place to see the gates fire
-turn by turn. Under **Full intake** only, a third option appears: **Voice (legacy)** — the original
-observer-only voice agent (`voice_legacy`), which talks from its own ElevenLabs prompt with no
-per-turn backend round trip, so it has none of the ~1-3s reply latency the decision-engine mediums
-do. See feature 14 below for why it's there and what its trade-off actually is.
+a **Text / Voice** toggle next to it. Text is always driven by the decision engine, and is the
+simplest place to see the gates fire turn by turn. **Voice**'s implementation depends on the other
+toggle: under **Scheduling only** it's `voice_scheduling`, the same decision engine over a mic (see
+feature 9); under **Full intake** it's `voice_legacy`, the original observer-only voice agent, which
+talks from its own ElevenLabs prompt with no per-turn backend round trip, so it has none of the
+~1-3s reply latency the decision-engine mediums do. See feature 14 below for why it's mapped that way
+and what the trade-off actually is.
 
 **Left column:** patient name/age controls. Below that, **"What Daphne knows"** — the live fact
 ledger, grouped by who the fact is about, with a "how they sound" strip underneath showing

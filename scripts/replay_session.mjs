@@ -173,6 +173,24 @@ async function runScenario(file) {
         got: decision ? `${decision.outcome} via ${decision.gate}` : "no decision",
       });
     }
+    // expectReplyContains/expectReplyNotContains's counterpart for
+    // scripted-agent mode, which has no composed reply -- decision.say is
+    // the equivalent authored text here (including the post-ACT rewrite
+    // runDecision applies for the actual booking/waitlist message).
+    if (turn.expectSayContains) {
+      checks.push({
+        name: `say contains "${turn.expectSayContains}"`,
+        pass: Boolean(decision?.say?.includes(turn.expectSayContains)),
+        got: decision?.say ?? "no decision",
+      });
+    }
+    if (turn.expectSayNotContains) {
+      checks.push({
+        name: `say does not contain "${turn.expectSayNotContains}"`,
+        pass: !decision?.say?.includes(turn.expectSayNotContains),
+        got: decision?.say ?? "no decision",
+      });
+    }
   }
 
   return finish(scenario, sessionId, checks, seenOutcomes);

@@ -44,10 +44,29 @@
       "content": "I'll just pick one up at the pharmacy myself.",
       "expectOutcome": "ACT",
       "expectGate": "act"
+    },
+    {
+      "role": "agent", "content": "I've put you on the cancellation list."
+    },
+    {
+      "role": "user",
+      "content": "Okay -- so what happens now, exactly?",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectSayContains": "cancellation list",
+      "expectSayNotContains": "I couldn't get you in"
+    },
+    {
+      "role": "user",
+      "content": "Alright, that's all, thank you.",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectSayContains": "Take care",
+      "expectSayNotContains": "Anything else I can help with"
     }
   ],
   "expect": {
-    "finalOutcome": "ACT",
+    "everOutcome": ["ACT"],
     "neverOutcome": ["STOP", "HANDOFF"],
     "resolution": "waitlisted",
     "facts": [
