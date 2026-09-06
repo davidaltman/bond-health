@@ -49,14 +49,7 @@ export function SummaryPanel({
     <div className="panel summary-panel">
       <div className="panel-header">
         <h2>Summary &amp; health timeline</h2>
-        <span className="legacy-badge">Legacy, unrelated feature</span>
       </div>
-      <p className="legacy-note">
-        A separate, older feature: static guideline-matching over a transcript. It is
-        <strong> not</strong> the decision engine &mdash; "Book a colonoscopy" here is a hardcoded
-        discussion-prompt rule firing on age, not a real booking. Ignore this panel unless you're
-        specifically testing the age-timeline extraction.
-      </p>
       <div className="panel-header">
         <span />
         <button type="button" className="secondary-button" disabled={!canGenerate || isGenerating} onClick={onGenerate}>

@@ -242,7 +242,16 @@ export default function App() {
           ) : (
             <TranscriptPanel status={status} transcript={transcript} errorMessage={errorMessage} />
           )}
-          <DecisionPanel decision={activeDecision} resolution={activeResolution} />
+          {/* Only meaningful under Scheduling only: that's the one mode where the
+              decision engine actually drives what gets said. Under Full intake,
+              voice_legacy never consults it at all (it's a pure ElevenLabs-scripted
+              observer -- see useDaphneConversation.ts), so a HANDOFF/"stuck gate"
+              badge there describes nothing that really happened on the call; even
+              under Full intake + Text, intake isn't meant to expose booking-gate
+              plumbing to begin with. */}
+          {sessionMode === "scheduling_only" ? (
+            <DecisionPanel decision={activeDecision} resolution={activeResolution} />
+          ) : null}
           {medium === "text" || medium === "voice_scheduling" ? (
             <ReviewPanel
               trace={medium === "text" ? text.trace : voiceScheduling.trace}
