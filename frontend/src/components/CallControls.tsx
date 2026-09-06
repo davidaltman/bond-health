@@ -24,10 +24,10 @@ export function CallControls({
   onStart: () => void;
   onStop: () => void;
   /** The agent picker and Start/Stop buttons below only mean anything for
-   *  the legacy 4-stage history-taking demo -- Text mode and Voice
-   *  (scheduling) each drive their own session from their own center-column
-   *  panel. Patient identity stays visible in every mode, since all three
-   *  read it from here. */
+   *  voice_legacy (Full intake's Voice) -- Text and Scheduling only's Voice
+   *  each drive their own session from their own center-column panel.
+   *  Patient identity stays visible in every mode, since all of them read it
+   *  from here. */
   showLegacyControls: boolean;
 }) {
   const isLive = status === "connecting" || status === "connected";
@@ -36,16 +36,7 @@ export function CallControls({
     <div className="panel controls-panel">
       <div className="panel-header">
         <h2>{showLegacyControls ? "Call setup" : "Patient"}</h2>
-        {showLegacyControls ? <span className="legacy-badge">Legacy voice demo</span> : null}
       </div>
-      {showLegacyControls ? (
-        <p className="legacy-note">
-          Starting a call here talks to the <strong>old</strong> history-taking agents (personal
-          history &rarr; family history &rarr; summary) &mdash; they only capture facts, they never
-          schedule anything. For a real scheduling conversation, use <strong>Text</strong> or{" "}
-          <strong>Voice</strong> above instead.
-        </p>
-      ) : null}
 
       <div className="field-row">
         <label className="field">
