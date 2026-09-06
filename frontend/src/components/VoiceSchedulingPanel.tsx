@@ -46,8 +46,6 @@ export function VoiceSchedulingPanel({
     <div className="panel transcript-panel">
       <div className="panel-header">
         <h2>Conversation</h2>
-        <span className="current-badge">The decision engine — speak here</span>
-        <span className="mode-badge">{mode === "scheduling_only" ? "Scheduling only" : "Full intake"}</span>
         <span className={`status-pill status-${status}`}>
           <span className="status-dot" />
           {STATUS_LABEL[status]}
