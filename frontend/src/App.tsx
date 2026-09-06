@@ -16,12 +16,16 @@ import { fetchAgents, summarizeTranscript } from "./api";
 import type { AgentOption, SessionMode, SummarizeResponse } from "./types";
 
 // "voice_legacy" is the original 4-stage history-taking demo (observer
-// only -- see useDaphneConversation.ts). It's no longer reachable from the
-// header toggle below -- "voice_scheduling" (labeled just "Voice" there) now
-// covers everything it did, and actually drives the decision engine besides
-// -- but the type/hook/component are left in place rather than deleted, in
-// case that plumbing (the original 4-agent ElevenLabs handoff) is wanted
-// again later.
+// only -- see useDaphneConversation.ts). It briefly went unreachable from
+// the header toggle on the theory that "voice_scheduling" (labeled just
+// "Voice") covered everything it did -- it doesn't, in practice: the
+// decision engine's per-turn extraction/decide round trip is a real latency
+// cost the legacy agent never had, since it just talks from its own
+// ElevenLabs-authored prompt with no backend round trip per turn. So legacy
+// is reachable again, but only under "Full intake" -- it never scheduled
+// anything, so it has nothing to offer under "Scheduling only". See
+// handleSessionModeChange's fallback for what happens if you're on legacy
+// and switch away from Full intake.
 type Medium = "text" | "voice_legacy" | "voice_scheduling";
 
 export default function App() {
@@ -88,6 +92,11 @@ export default function App() {
     // decision-engine mediums share this toggle, so both get reset.
     text.reset();
     voiceScheduling.reset();
+    // Legacy has no scheduling-only equivalent -- it never scheduled
+    // anything in either mode -- so leaving it selected while switching to
+    // Scheduling only would show a medium with nothing to offer. Text is the
+    // least surprising fallback since it's the default everywhere else.
+    if (next === "scheduling_only" && medium === "voice_legacy") setMedium("text");
   }
 
   const activeFacts = medium === "text" ? text.facts : medium === "voice_scheduling" ? voiceScheduling.facts : facts;
@@ -150,29 +159,35 @@ export default function App() {
       <header className="app-header">
         <AltmanAILogo size={32} />
         <div className="app-header-subtitle">Health intake, from history-taking to resolution</div>
-        {medium === "text" || medium === "voice_scheduling" ? (
-          <div className="medium-toggle" title="Fixed per session -- switching starts a new one">
-            <button
-              type="button"
-              className={sessionMode === "full" ? "medium-option medium-option-active" : "medium-option"}
-              onClick={() => handleSessionModeChange("full")}
-            >
-              Full intake
-            </button>
-            <button
-              type="button"
-              className={sessionMode === "scheduling_only" ? "medium-option medium-option-active" : "medium-option"}
-              onClick={() => handleSessionModeChange("scheduling_only")}
-            >
-              Scheduling only
-            </button>
-          </div>
-        ) : null}
+        <div className="medium-toggle" title="Fixed per session -- switching starts a new one">
+          <button
+            type="button"
+            className={sessionMode === "full" ? "medium-option medium-option-active" : "medium-option"}
+            onClick={() => handleSessionModeChange("full")}
+          >
+            Full intake
+          </button>
+          <button
+            type="button"
+            className={sessionMode === "scheduling_only" ? "medium-option medium-option-active" : "medium-option"}
+            onClick={() => handleSessionModeChange("scheduling_only")}
+          >
+            Scheduling only
+          </button>
+        </div>
         <div className="medium-toggle">
-          {([
-            { id: "text", label: "Text" },
-            { id: "voice_scheduling", label: "Voice" },
-          ] as Array<{ id: Medium; label: string }>).map((option) => (
+          {(
+            sessionMode === "full"
+              ? ([
+                  { id: "text", label: "Text" },
+                  { id: "voice_scheduling", label: "Voice" },
+                  { id: "voice_legacy", label: "Voice (legacy)" },
+                ] satisfies Array<{ id: Medium; label: string }>)
+              : ([
+                  { id: "text", label: "Text" },
+                  { id: "voice_scheduling", label: "Voice" },
+                ] satisfies Array<{ id: Medium; label: string }>)
+          ).map((option) => (
             <button
               key={option.id}
               type="button"

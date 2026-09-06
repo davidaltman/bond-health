@@ -43,7 +43,7 @@ export function CallControls({
           Starting a call here talks to the <strong>old</strong> history-taking agents (personal
           history &rarr; family history &rarr; summary) &mdash; they only capture facts, they never
           schedule anything. For a real scheduling conversation, use <strong>Text</strong> or{" "}
-          <strong>Voice (scheduling)</strong> above instead.
+          <strong>Voice</strong> above instead.
         </p>
       ) : null}
 

@@ -280,10 +280,14 @@ gates-over-prompts design in the first place.
   agent, not to "voice" generally: a second voice experience (internally `voice_scheduling`, labeled
   just **Voice** in the header — see app-guide's Features §9) closes exactly this gap by having a thin
   ElevenLabs agent delegate every turn to the same decision engine text mode uses, via a client tool.
-  With it covering everything the legacy agent did and more, the header no longer exposes the legacy
-  agent as a selectable option at all — the code is still there, just not wired to a button. It has
-  not yet been verified against every scenario over a real mic call end to end (see app-guide's
-  "Future improvements" §3).
+  That closes the *scheduling* gap, but it does not make the legacy agent redundant for *intake*: the
+  decision engine's per-turn extraction/decide round trip is real latency the legacy agent never had
+  (it just talks from its own prompt, no backend call per turn), and live testing showed that
+  trade-off is genuinely worse for pure history-taking than the legacy agent's own scripted chain --
+  see app-guide's Features §14. So the header briefly stopped exposing legacy as a selectable option
+  at all, then went back to exposing it, scoped to **Full intake** only (it never scheduled anything,
+  so it has nothing to offer under Scheduling only). It has not yet been verified against every
+  scenario over a real mic call end to end (see app-guide's "Future improvements" §3).
 - **Medication refill scenario.** The natural second act, and the sharper safety case — refills need
   a prescriber relationship the agent can't verify. Strong candidate for "next."
 - **Document upload** (pill-bottle photo → low-confidence facts needing confirmation). The
