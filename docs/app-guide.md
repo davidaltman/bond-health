@@ -144,7 +144,25 @@ now round-trips through the same extraction + compose pass text mode does, so ex
 agent gives. That gap is exactly why `voice_legacy` stays available rather than being retired now that
 this exists — see feature 14.
 
-See it: the **"Voice"** toggle in the header, and `frontend/src/components/VoiceSchedulingPanel.tsx`.
+The agent's own prompt tells it to call ElevenLabs' built-in `end_call` tool once the tool's reply
+reaches a stopping point *and* the patient indicates they're done — it's declared right in the config
+file. It didn't actually hang up, though: a live call kept saying "You're all set... anything else?"
+in a loop after the patient had already said goodbye. The tool was configured correctly by ElevenLabs'
+own documented schema; what wasn't obvious is that `built_in_tools` (where that schema example puts
+`end_call`) is only read for agents using the newer `tool_ids`-based tool reference, and this agent
+still uses the older inline `prompt.tools` array for `advance_scheduling` — for that format, system
+tools have to go inside `tools` itself. Confirmed by PATCHing both shapes against the live agent and
+reading back what ElevenLabs actually persisted (`built_in_tools.end_call` came back `null` every time
+it was sent there; moved into `tools`, it stuck). Fixed live and in
+`agent_configs/05_daphne_scheduling_voice.create.json` — see that file's `metadata.notes` for the full
+account. The other half of the same transcript — the repeated "anything else?" line itself, independent
+of whether the call ever hangs up — is `decide.ts`'s new `CLOSING_PATTERN` branch on the
+`already_resolved` gate: once the patient's said "no, that's it" (or similar), it answers with an
+actual goodbye instead of asking again. That half matters for text mode too, which has no call to
+end but reads exactly as unresponsive if it repeats itself after a patient says they're done.
+
+See it: the **"Voice"** toggle in the header, and `frontend/src/components/VoiceSchedulingPanel.tsx`;
+`harness_inputs/text_mode_full_journey.json`'s last two turns for the `CLOSING_PATTERN` regression.
 
 ### 10. A pickup escort ask that never blocks
 
@@ -374,7 +392,7 @@ pure unit checks; anything that touches the mock calendar goes through the live-
 The live-server suite drives the actual server over HTTP (no engine mocking), prints every turn's ledger operations,
 signals, and decision, then a final fact table, resolution, and pass/fail per assertion. ~1-5 seconds
 per patient turn (each is a real model call), roughly a minute and a half for all eight scenarios.
-Non-zero exit on any failure. Currently 137/137 across all eight.
+Non-zero exit on any failure. Currently 145/145 across all eight.
 
 Eight scenarios today, one per gate family, plus two that pin down real live bug reports:
 
@@ -462,6 +480,20 @@ Organized by how much they matter.
     question, phrased three different ways, getting that exact non-answer three times in a row. The
     `already_resolved` gate now recognizes a question about the booking's date, clinic, or
     confirmation number and answers with the real values instead. See Features §12.
+- **A live voice call also never hung up.** Two independent bugs, both surfaced by the same
+  transcript, both fixed together:
+  - The scheduling voice agent's `end_call` tool was declared in `prompt.built_in_tools`, matching
+    ElevenLabs' own documented example exactly — but that field only takes effect for agents using
+    the newer `tool_ids` tool-reference format, and this agent still uses the legacy inline
+    `prompt.tools` array for its `advance_scheduling` client tool. For that format, system tools have
+    to live inside `tools` itself. Moved there, confirmed live via the agent's own API (see feature 9
+    above and the config file's `metadata.notes`).
+  - Independent of whether the call ever actually hangs up: once a booking existed, saying "no,
+    that's it" got the same "anything else I can help with?" line back, instead of an acknowledgment
+    that the conversation was over. `decide.ts`'s `already_resolved` gate now recognizes a farewell
+    (`CLOSING_PATTERN`) and closes rather than re-asking — this half matters for text mode too, which
+    has no call to hang up but reads exactly as unresponsive without it. Pinned down by the last two
+    turns of `harness_inputs/text_mode_full_journey.json`.
 - **`transcripts/` contained interview-prep notes**, including files named after a real person, and
   `docs/prior-art-daphne-history-demo.md` named a previous employer's customers and internal system
   paths. Both were removed from the working tree, and `git filter-repo` rewrote history to strip

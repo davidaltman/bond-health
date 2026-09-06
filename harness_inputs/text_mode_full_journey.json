@@ -56,10 +56,26 @@
       "content": "789 Birch Lane, Riverside.",
       "expectOutcome": "ACT",
       "expectGate": "act"
+    },
+    {
+      "role": "user",
+      "content": "Wait, what day was that appointment again?",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectReplyContains": "confirmation number",
+      "expectReplyNotContains": "You're all set"
+    },
+    {
+      "role": "user",
+      "content": "Great, no that's it, thanks.",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectReplyContains": "take care",
+      "expectReplyNotContains": "Anything else I can help with"
     }
   ],
   "expect": {
-    "finalOutcome": "ACT",
+    "everOutcome": ["ACT"],
     "neverOutcome": ["STOP", "HANDOFF"],
     "resolution": "booked",
     "confirmationId": true,

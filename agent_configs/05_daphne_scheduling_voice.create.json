@@ -66,8 +66,8 @@
             "description": "Call this for every single patient turn, with no exceptions. Pass the patient's message through verbatim. Returns the exact words to say back to the patient -- this tool, not you, decides what happens next in the scheduling conversation (safety checks, eligibility, booking, or a refusal). Always wait for its response and speak only that response, unchanged.",
             "expects_response": true,
             "response_timeout_secs": 30,
-            "parameters": {
-              "type": "object",
+            "parameters":           {
+            "type": "object",
               "properties": {
                 "message": {
                   "type": "string",
@@ -78,10 +78,8 @@
                 "message"
               ]
             }
-          }
-        ],
-        "built_in_tools": {
-          "end_call": {
+          },
+          {
             "type": "system",
             "name": "end_call",
             "description": "Call this once the scheduling conversation has reached a natural stopping point (booked, waitlisted, or refused) and the patient has indicated they're done.",
@@ -89,7 +87,10 @@
             "params": {
               "system_tool_type": "end_call"
             }
-          },
+          }
+        ],
+        "built_in_tools": {
+          "end_call": null,
           "transfer_to_agent": null,
           "voicemail_detection": null,
           "language_detection": null,
@@ -101,6 +102,6 @@
     }
   },
   "metadata": {
-    "notes": "Not part of the 01->04 history-taking chain -- no transfer_to_agent in or out. This agent has no scheduling logic of its own; its only behavior is calling the client tool `advance_scheduling` (handled in frontend/src/useVoiceSchedulingConversation.ts) for every patient turn and speaking back its `reply` verbatim. The tool handler calls the exact same POST /api/session/:id/message endpoint the text ChatPanel uses, so voice and text share one decision engine, one SessionMode, one escort ask -- see decide.ts. llm/temperature/tts settings copied from 04_daphne_summary.create.json's already-verified working config (gpt-5.4-mini requires temperature=0 when reasoning_effort != none; eleven_v3_conversational needs expressive_mode=true). Created via scripts/create_scheduling_voice_agent.py, which POSTs this file (minus this metadata block) to /v1/convai/agents/create and writes the resulting agent_id back into this file."
+    "notes": "Not part of the 01->04 history-taking chain -- no transfer_to_agent in or out. This agent has no scheduling logic of its own; its only behavior is calling the client tool `advance_scheduling` (handled in frontend/src/useVoiceSchedulingConversation.ts) for every patient turn and speaking back its `reply` verbatim. The tool handler calls the exact same POST /api/session/:id/message endpoint the text ChatPanel uses, so voice and text share one decision engine, one SessionMode, one escort ask -- see decide.ts. llm/temperature/tts settings copied from 04_daphne_summary.create.json's already-verified working config (gpt-5.4-mini requires temperature=0 when reasoning_effort != none; eleven_v3_conversational needs expressive_mode=true). Created via scripts/create_scheduling_voice_agent.py, which POSTs this file (minus this metadata block) to /v1/convai/agents/create and writes the resulting agent_id back into this file.\n\nEND_CALL PLACEMENT (found the hard way, live, after this agent shipped without it working): `end_call` was originally declared under `prompt.built_in_tools`, matching ElevenLabs' documented *new-format* example -- but that field is only read when the agent also uses the new `tool_ids`-based reference for its other tools. This agent still uses the *legacy* inline `prompt.tools` array for `advance_scheduling` (a deliberate choice -- see the tool's own description), and for a legacy-format agent, system tools have to live in that same `tools` array (`{\"type\": \"system\", \"name\": \"end_call\", ...}` alongside the client tool), not in `built_in_tools`. Confirmed by PATCHing both shapes against the live agent and reading back what ElevenLabs actually persisted: `built_in_tools.end_call` came back `null` every time it was sent there, and stuck once moved into `tools`. `built_in_tools.end_call` is left explicit-`null` here (matching live) rather than deleted, so a future migration to `tool_ids` doesn't silently forget end_call needs to move back."
   }
 }

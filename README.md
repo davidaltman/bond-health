@@ -216,7 +216,7 @@ prompt. Prompts tune tone; structure enforces behavior. (Full incident write-up:
 | 3 | Mock scheduling + resolution, including the unhappy path | 1.5h | done — booking + waitlist |
 | 4 | Daphne conversation layer + tone/readiness policy | 1.0h | done — text loop closed |
 | 5 | Session Review pane (real-time signal) | 1.5h | done — per-turn gate trace + flagging |
-| 6 | Eval runner + ~8 scenario cases | 1.0h | done — `npm run eval`, 8 scenarios, 137/137 |
+| 6 | Eval runner + ~8 scenario cases | 1.0h | done — `npm run eval`, 8 scenarios, 145/145 |
 |   | **Total** | **10.0h** | |
 
 README is written continuously, not at the end.
@@ -270,6 +270,21 @@ history?" question — see app-guide's Features §13, `requirements.ts`'s `REQUI
 original agent's own version of this exact problem (an LLM asked to self-police a relative checklist,
 repeatedly short-circuiting after one finding) — the direct inspiration for this whole repo's
 gates-over-prompts design in the first place.
+
+Also restored, from live use: the legacy voice agent is selectable again (scoped to **Full intake**
+only — see app-guide's Features §14), after direct feedback that Voice's per-turn decision-engine
+round trip is worse for pure history-taking than the legacy agent's own near-instant scripted flow.
+And a live call surfaced the last fix in this round: the scheduling voice agent's `end_call` tool was
+declared correctly by ElevenLabs' own documented schema, but silently never took effect, because that
+schema's example assumes the newer `tool_ids` tool-reference format and this agent still uses the
+older inline `tools` array for its one client tool — for that format, system tools have to live
+alongside it in `tools`, not in `built_in_tools`. The call never actually hung up as a result. A
+second, independent bug in the same transcript made it look worse than it was: `decide.ts`'s
+`already_resolved` gate answered a plain "no, that's it" with the same "anything else I can help
+with?" line it uses for everything else once booked, instead of closing out — fixed with a
+`CLOSING_PATTERN` check, which matters for text mode too, since it has no call to hang up but reads
+identically unresponsive without this. See app-guide's Features §9 and "Resolved since earlier
+drafts," and the last two turns of `text_mode_full_journey` in the eval suite.
 
 ## Explicitly not doing (and what I'd build next)
 
@@ -400,7 +415,7 @@ It prints each turn's ledger operations, signals, and decision, then the final f
 resolution, and acceptance checks. Exit code is non-zero if any check fails, so it works as a gate.
 Roughly one small model call per patient turn, 1–5s each, all off the conversational path.
 
-Eight scenarios, ~137 assertions (the exact count varies by a check or two run to run — see the
+Eight scenarios, ~145 assertions (the exact count varies by a check or two run to run — see the
 signal-classification note in `docs/app-guide.md`'s Limitations), one per gate plus two regression
 cases:
 

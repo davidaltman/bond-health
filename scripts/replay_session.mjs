@@ -108,6 +108,26 @@ async function runScenario(file) {
           got: result.reply.acknowledgment,
         });
       }
+
+      // Scenario-declared substring checks on the exact reply text --
+      // narrower than expectOutcome/expectGate, for pinning down *which*
+      // authored line fired when more than one already_resolved branch
+      // shares the same outcome/gate (a booking-detail answer, a closing
+      // line, and the generic fallback are all `ASK via already_resolved`).
+      if (turn.expectReplyContains) {
+        checks.push({
+          name: `reply contains "${turn.expectReplyContains}"`,
+          pass: result.reply.text.includes(turn.expectReplyContains),
+          got: result.reply.text,
+        });
+      }
+      if (turn.expectReplyNotContains) {
+        checks.push({
+          name: `reply does not contain "${turn.expectReplyNotContains}"`,
+          pass: !result.reply.text.includes(turn.expectReplyNotContains),
+          got: result.reply.text,
+        });
+      }
     }
     return finish(scenario, sessionId, checks, seenOutcomes);
   }
@@ -220,6 +240,20 @@ async function finish(scenario, sessionId, checks, seenOutcomes) {
     checks.push({
       name: `never decides ${forbidden} at any point`,
       pass: !seenOutcomes.includes(forbidden),
+      got: seenOutcomes.join(" → "),
+    });
+  }
+
+  // The counterpart to neverOutcome -- for scenarios that keep talking after
+  // the interesting outcome happens (e.g. a booking-detail question or a
+  // farewell after ACT), where the *last* decision is no longer the one that
+  // matters. finalOutcome and everOutcome are complementary, not redundant:
+  // a scenario can assert both ("it must ACT at some point, and must not
+  // still be asking by the end").
+  for (const required of expect.everOutcome ?? []) {
+    checks.push({
+      name: `decides ${required} at some point`,
+      pass: seenOutcomes.includes(required),
       got: seenOutcomes.join(" → "),
     });
   }

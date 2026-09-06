@@ -101,6 +101,23 @@ const SCHEDULING_ONLY_BOOKING_WINDOW_DAYS = 30;
  */
 const BOOKING_DETAIL_PATTERN = /\b(date|when|day|time|calendar|confirm(ation|ed)?|clinic|where)\b/i;
 
+/**
+ * Recognizes the patient signaling they're done -- a plain "no, that's it" or
+ * "nothing else" -- so already_resolved can close the conversation instead of
+ * asking "anything else I can help with?" a second time. Checked before
+ * BOOKING_DETAIL_PATTERN, since a farewell wins over an incidental word match
+ * ("no, that's it, don't need the date" is still a farewell). This exists
+ * because of a live voice call where the patient's silence after an
+ * unanswered "anything else?" got fed back through as another turn, and the
+ * generic line repeated verbatim -- see agent_configs/
+ * 05_daphne_scheduling_voice.create.json's now-fixed `end_call` wiring for
+ * the other half of that bug. This half matters independent of that fix:
+ * text mode has no call to end, so without this the same repeat would still
+ * read as "not listening" there too.
+ */
+const CLOSING_PATTERN =
+  /\b(?:that'?s (?:it|all)|nothing else|no,? thanks?(?: you)?|i'?m (?:good|all set|all done|done)|we'?re (?:good|all set|done)|no more questions)\b/i;
+
 /** Everything already_resolved needs to answer a "what did you book me"
  *  question, pre-formatted for speech in sessions.ts using the same helper
  *  the original booking confirmation used -- decide.ts has no reason to
@@ -250,6 +267,16 @@ export function decide(input: DecisionInput): Decision {
   }
 
   if (input.alreadyBooked) {
+    if (CLOSING_PATTERN.test(input.patientTurn)) {
+      return {
+        ...base,
+        outcome: "ASK",
+        gate: "already_resolved",
+        reason: "Screening is already booked and the patient signaled they're done -- closing, not re-asking.",
+        missingSlot: null,
+        say: "Sounds good — take care, and don't hesitate to reach out if anything comes up before your appointment.",
+      };
+    }
     if (input.booking && BOOKING_DETAIL_PATTERN.test(input.patientTurn)) {
       return {
         ...base,
