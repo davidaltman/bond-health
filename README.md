@@ -313,6 +313,29 @@ What carries forward is infrastructure and hard-won lessons, not the history-tak
 The history-capture agents are not the centerpiece of the submission and will not be presented as
 one.
 
+### Bookmarked test conversations
+
+Carried forward from the prior-art prototype's own README, since it's still the fastest way to
+sanity-check the legacy `/api/summarize` / "Insights & actions" panel (Features section, app-guide)
+without placing a new call:
+
+- **`conv_2401m06z03rwej1aj5kh7pgahxdn`** — dense real call, patient age 53. Paste into the
+  SummaryPanel's "Or pull a past conversation by id" field (set Age to 53 first — it isn't stored on
+  the conversation itself) and regenerate. Exercises all four insight types at once: both guideline
+  reminders (shingles ≥50, colorectal screening ≥45 — this is the "Book a colonoscopy" finding), a
+  mechanical/surgical cluster (patient's + father's + half-brother's hernia repairs), a data gap
+  (a medication with dose unknown), an age-related cluster correctly *not* flagged as hereditary
+  (two relatives' leukemia at 83/70), a confounded cluster (two relatives' asthma, one explicitly
+  tied to smoking), and a family-early-death flag (a relative's fatal pneumonia at 37). Re-run this
+  one after any change to `followups.ts` — it's the one case that touches every pattern type at once.
+- `conv_7001m0649qxqftvbtzvxnns81nk0` — the personal-history + family-history test call referenced in
+  `frontend/README.md`'s walkthrough; useful for the age-timeline extraction specifically, not the
+  insights panel.
+
+Not yet verified which ElevenLabs account either ID currently resolves against (the personal sandbox
+this repo's `.env` points at, or the account used while building the prior-art prototype) — confirm
+with a `GET /v1/convai/conversations/{id}` before relying on either for a live demo.
+
 ## Open items before any of this runs
 
 These are real blockers, not paperwork.
@@ -327,7 +350,8 @@ These are real blockers, not paperwork.
    ([`server/src/llm.ts`](server/src/llm.ts)) so the provider is a single edit rather than a hunt
    through call sites. The AWS SDK dependency is gone. `/api/summarize` verified end to end: correct
    extraction, both guideline rules, a familial cluster, a symptom referral, and a data gap all fire
-   as they did on Bedrock.
+   as they did on Bedrock, replayed against the same bookmarked conversation the prior-art prototype
+   used for this check — see "Bookmarked test conversations" below.
 3. **~~Prune before sharing.~~ Resolved.** `transcripts/` contained Bond's NDA'd demo transcript and
    my own interview-prep notes; the prior-art doc in `docs/` referenced a previous employer's
    customers and internal paths. Neither belonged in a submission. Both are removed from the working

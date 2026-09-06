@@ -245,6 +245,10 @@ buttons, present for both Text and Voice since both drive the engine.
 **Right column:** a summary panel for the separate post-call timeline feature (`/api/summarize`) —
 this is legacy from the prior-art prototype (see README's "Prior art" section), not part of the
 decision-engine story. Ignore it unless you're specifically looking at the age-timeline extraction.
+To try it without placing a new call, paste `conv_2401m06z03rwej1aj5kh7pgahxdn` into "Or pull a past
+conversation by id", set Age to 53, and regenerate — see README's "Bookmarked test conversations" for
+what it should produce (both guideline reminders, including the colonoscopy one, plus all three
+clustering patterns and a data gap).
 
 ### Try this conversation, typed into the chat box one line at a time:
 
