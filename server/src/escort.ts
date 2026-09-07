@@ -11,6 +11,13 @@
  * Per this app's explicit design, the ask is never blocking -- a decline, a
  * name, or an unparseable mumble are all just as final as each other. See
  * decide.ts's "escort" gate.
+ *
+ * The decline judgment itself ("no one," "I'll figure it out," "not really")
+ * has no fixed vocabulary, so it's made by an LLM call in logistics-llm.ts,
+ * run from sessions.ts in parallel with the turn's extraction call.
+ * DECLINE_PATTERN below is only the fallback for when that call fails or
+ * wasn't made. Phone and email extraction stay regex either way -- those
+ * really are fixed-shape patterns, not judgment calls.
  */
 
 export interface EscortContact {
@@ -67,11 +74,18 @@ function deriveLabel(raw: string, email: string | null): string {
   return label.trim() || candidate.trim();
 }
 
-export function parseEscortReply(raw: string): EscortContact {
+/**
+ * `declineJudgment` is the LLM's read on whether this reply is a decline
+ * (see logistics-llm.ts's classifyDecline), passed in by the caller when
+ * that call was made and succeeded. Pass null to fall back to
+ * DECLINE_PATTERN, e.g. when the call errored.
+ */
+export function parseEscortReply(raw: string, declineJudgment: boolean | null = null): EscortContact {
   const trimmed = raw.trim();
   const phoneMatch = trimmed.match(PHONE_PATTERN);
   const emailMatch = trimmed.match(EMAIL_PATTERN);
-  if (DECLINE_PATTERN.test(trimmed)) {
+  const declined = declineJudgment ?? DECLINE_PATTERN.test(trimmed);
+  if (declined) {
     return { provided: false, raw: trimmed, phone: null, email: null, label: "" };
   }
   return {

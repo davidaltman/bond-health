@@ -30,6 +30,7 @@ import {
 import { describePreference, parseSchedulingPreference, type SchedulingPreference } from "./preference.js";
 import { parseEscortReply, type EscortContact } from "./escort.js";
 import { parseShippingAddress, type ShippingAddress } from "./shipping.js";
+import { classifyDecline, classifySoonestPreference } from "./logistics-llm.js";
 import {
   applyOperations,
   createLedger,
@@ -214,11 +215,57 @@ export async function appendTurn(
           .reverse()
           .find((candidate) => candidate.role === "agent")?.content ?? null;
 
-      const extraction = await extractTurn({
-        factsOnFile: summarizeForPrompt(session.ledger),
-        precedingAgentTurn,
-        patientTurn: content,
-      });
+      // Which gate this turn is answering is already known from the *last*
+      // decision and the sticky bookingRequested flag -- neither depends on
+      // this turn's extraction -- so the logistics judgment call (see
+      // logistics-llm.ts) can start at the same time as extraction rather
+      // than after it. Promise.all below is what makes that concurrent
+      // instead of sequential; skipped entirely on turns where no gate makes
+      // it relevant, so an ordinary history-taking turn never pays for it.
+      const priorGate = session.decisions.at(-1)?.gate ?? null;
+      const expectingSchedulingPreference = session.bookingRequested && !session.schedulingPreference;
+      const expectingEscort = priorGate === "escort" && !session.escortContact;
+      const expectingShipping = priorGate === "shipping" && !session.shippingAddress;
+
+      const logisticsCall: Promise<
+        { kind: "soonest"; soonestOk: boolean } | { kind: "decline"; declined: boolean } | null
+      > = expectingSchedulingPreference
+        ? classifySoonestPreference({ question: precedingAgentTurn, reply: content }).then(
+            (judgment) => ({ kind: "soonest" as const, ...judgment }),
+          )
+        : expectingEscort
+          ? classifyDecline({ askedFor: "escort_contact", question: precedingAgentTurn, reply: content }).then(
+              (judgment) => ({ kind: "decline" as const, ...judgment }),
+            )
+          : expectingShipping
+            ? classifyDecline({ askedFor: "shipping_address", question: precedingAgentTurn, reply: content }).then(
+                (judgment) => ({ kind: "decline" as const, ...judgment }),
+              )
+            : Promise.resolve(null);
+
+      const [extraction, logisticsJudgment] = await Promise.all([
+        extractTurn({
+          factsOnFile: summarizeForPrompt(session.ledger),
+          precedingAgentTurn,
+          patientTurn: content,
+        }),
+        // A failed logistics call degrades to the regex fallback inside
+        // preference.ts/escort.ts/shipping.ts, same discipline as
+        // extractTurn's own catch block below -- it must never take the
+        // turn's already-successful extraction down with it, which is why
+        // this has its own catch rather than sharing the outer try/catch.
+        logisticsCall.catch((error) => {
+          session.trace.push({
+            turn: turn.index,
+            at: new Date().toISOString(),
+            kind: "extraction_failed",
+            detail: `logistics classification failed, falling back to regex: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          });
+          return null;
+        }),
+      ]);
 
       applied = applyOperations(session.ledger, extraction.operations, turn.index);
       session.signals = { turn: turn.index, ...extraction.signals };
@@ -235,9 +282,18 @@ export async function appendTurn(
       // booking intent (this turn's or already sticky) so a stray weekday
       // mentioned earlier in the conversation for an unrelated reason never
       // gets mistaken for a scheduling answer.
+      // justAskedToBook covers the one turn where a booking request and a
+      // preference arrive in the same breath ("sure, book it, but early
+      // Monday mornings work best") -- session.bookingRequested isn't sticky
+      // yet at the point logisticsCall was kicked off above, so that one
+      // turn's soonest judgment (if any) never got started concurrently.
+      // Falling back to a plain regex read here rather than firing a second,
+      // sequential LLM call keeps that rare turn fast at the cost of using
+      // the less precise signal exactly once, which is an acceptable trade.
       const justAskedToBook = session.signals.readiness === "explicit_request";
       if ((justAskedToBook || session.bookingRequested) && !session.schedulingPreference) {
-        const preference = parseSchedulingPreference(content);
+        const soonestOk = logisticsJudgment?.kind === "soonest" ? logisticsJudgment.soonestOk : null;
+        const preference = parseSchedulingPreference(content, soonestOk);
         if (preference) session.schedulingPreference = preference;
       }
 
@@ -247,13 +303,15 @@ export async function appendTurn(
       // booking intent generally, which would risk reading a stray name
       // mentioned for some other reason as the pickup answer.
       if (session.decisions.at(-1)?.gate === "escort" && !session.escortContact) {
-        session.escortContact = parseEscortReply(content);
+        const declined = logisticsJudgment?.kind === "decline" ? logisticsJudgment.declined : null;
+        session.escortContact = parseEscortReply(content, declined);
       }
 
       // Same reasoning again, one gate later: a shipping address only means
       // anything as the answer to the shipping gate's specific question.
       if (session.decisions.at(-1)?.gate === "shipping" && !session.shippingAddress) {
-        session.shippingAddress = parseShippingAddress(content);
+        const declined = logisticsJudgment?.kind === "decline" ? logisticsJudgment.declined : null;
+        session.shippingAddress = parseShippingAddress(content, declined);
       }
 
       runDecision(session, turn.index, content);

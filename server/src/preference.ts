@@ -6,12 +6,19 @@
  * mixing it into ClinicalFact would blur exactly the line that file exists to
  * draw.
  *
- * It also doesn't need a model call. The vocabulary is small and fixed --
- * seven weekdays, two parts of day, a handful of ways to say "whatever's
- * soonest" -- which is precisely the case for encoding it in code rather than
- * asking a model to reproduce the same fixed set turn after turn. Same
- * principle as requirements.ts's slot vocabulary, applied to a simpler
- * problem.
+ * The day/time half doesn't need a model call. The vocabulary is small and
+ * fixed -- seven weekdays, two parts of day -- which is precisely the case
+ * for encoding it in code rather than asking a model to reproduce the same
+ * fixed set turn after turn. Same principle as requirements.ts's slot
+ * vocabulary, applied to a simpler problem.
+ *
+ * The "soonest, no preference" half is different: there is no fixed set of
+ * ways to say that ("whatever's easiest," "you pick," "I'm flexible
+ * honestly"), so that judgment is made by an LLM call in logistics-llm.ts,
+ * run from sessions.ts in parallel with the turn's extraction call. The two
+ * patterns below are only the fallback for when that call fails or wasn't
+ * made, so a network hiccup degrades to the old keyword match rather than
+ * to no signal at all.
  */
 
 export type TimeOfDay = "morning" | "afternoon";
@@ -58,8 +65,16 @@ const AMBIGUOUS_SOONEST_PATTERN = /\byou pick\b|\bup to you\b|works for me|whate
  * "patient doesn't care." Those are different things, in the same way a
  * missing fact and a fact with status "never" are different things elsewhere
  * in this codebase: silence is not an answer.
+ *
+ * `soonestJudgment` is the LLM's read on "no preference / take the soonest
+ * opening" (see logistics-llm.ts's classifySoonestPreference), passed in by
+ * the caller when that call was made and succeeded. Pass null to fall back
+ * to the old keyword patterns, e.g. when the call errored.
  */
-export function parseSchedulingPreference(text: string): SchedulingPreference | null {
+export function parseSchedulingPreference(
+  text: string,
+  soonestJudgment: boolean | null = null,
+): SchedulingPreference | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
@@ -77,7 +92,8 @@ export function parseSchedulingPreference(text: string): SchedulingPreference | 
   const namedSomething = dayOfWeek !== -1 || timeOfDay !== null;
 
   const soonest =
-    UNAMBIGUOUS_SOONEST_PATTERN.test(trimmed) || (!namedSomething && AMBIGUOUS_SOONEST_PATTERN.test(trimmed));
+    soonestJudgment ??
+    (UNAMBIGUOUS_SOONEST_PATTERN.test(trimmed) || (!namedSomething && AMBIGUOUS_SOONEST_PATTERN.test(trimmed)));
 
   if (!soonest && !namedSomething) return null;
 

@@ -12,8 +12,10 @@ Every stage below is real code, cited by file. Nothing here is aspirational.
 
 ## 0. The one-sentence version
 
-**ElevenLabs turns speech into text and text into speech. Our backend, calling OpenAI twice
-per turn, decides everything about what gets said. ElevenLabs never decides content.**
+**ElevenLabs turns speech into text and text into speech. Our backend, calling OpenAI two or
+three times per turn (a third call, run concurrently with the first, only on turns where a
+day/time preference or a decline judgment is actually in play), decides everything about
+what gets said. ElevenLabs never decides content.**
 
 ```
 Patient speaks
@@ -29,7 +31,8 @@ frontend/src/useVoiceSchedulingConversation.ts                                �
      ▼                                                                        │
 server/src/sessions.ts: exchange()                                            │
      │                                                                        │
-     ├─ 1. extractTurn()      → OpenAI call #1 (facts + signals)              │
+     ├─ 1. extractTurn()      → OpenAI call #1 (facts + signals)   ┐          │
+     ├─ 1b. classifySoonest/Decline → OpenAI call #1b, conditional┘ parallel │
      ├─ 2. applyOperations()  → pure code, updates the ledger                 │
      ├─ 3. deterministic parsers (preference / escort / shipping) → pure code │
      ├─ 4. decide()           → pure code, one of ACT/ASK/STOP/HANDOFF        │
@@ -198,20 +201,50 @@ Output: AppliedOperation[] -- e.g. [{ outcome: "added", factId: "f7", detail: "s
 This also updates `session.signals` to this turn's signals (overwriting the previous turn's
 — signals are a snapshot of *this* turn's tone, not history).
 
-### Step 3 — deterministic parsers: pure code, conditionally run
+### Step 1b — logistics judgment: OpenAI call #1b, conditional and concurrent with Step 1
 
-Still inside `appendTurn()` (lines 233-256), three narrow regex-based parsers run — never
-through the LLM, because a day/time or a name is logistics, not clinical history that
-belongs in the fact ledger:
+`server/src/logistics-llm.ts`, `classifySoonestPreference()` / `classifyDecline()`. Kicked
+off from inside `appendTurn()` in the same `Promise.all()` as `extractTurn()` (Step 1) —
+*not* after it — so it costs no extra wall-clock time on the turns where it runs, and costs
+nothing at all on turns where it doesn't.
 
-| Parser | File | Runs when | Reads |
-|---|---|---|---|
-| `parseSchedulingPreference` | `preference.ts` | patient just asked to book, or already had | day of week / morning-afternoon / "soonest" out of raw text |
-| `parseEscortReply` | `escort.ts` | the *previous* decision's gate was `"escort"` | a name and/or email out of raw text |
-| `parseShippingAddress` | `shipping.ts` | the *previous* decision's gate was `"shipping"` | an address, or an explicit decline, out of raw text |
+Whether it runs, and which of the two functions, is decided *before* extraction even starts,
+from state that's already known: the sticky `bookingRequested` flag and the *previous*
+turn's decision gate — neither depends on what this turn's extraction is about to say.
+
+| Function | Runs when | Judges |
+|---|---|---|
+| `classifySoonestPreference` | patient already asked to book (sticky), no preference recorded yet | does this reply mean "no preference, take the soonest opening" |
+| `classifyDecline` | the *previous* decision's gate was `"escort"` or `"shipping"`, no answer recorded yet | is this reply a decline (as opposed to actually providing the thing asked for) |
 
 ```
-Input:  content (raw patient text), gated on session.decisions.at(-1)?.gate
+Input:  precedingAgentTurn (the question Daphne just asked), content (raw patient text)
+Output: { soonestOk: boolean }  or  { declined: boolean }
+```
+
+This exists because "soonest, no preference" and "that's a decline" are open-ended
+judgments over phrasing nobody enumerated in advance ("whatever's easiest," "I'll just grab
+one myself") — the same kind of call `extractTurn` already makes for clinical content,
+applied to logistics instead of history. A failed or skipped call here is never fatal: its
+own `.catch()` logs `extraction_failed` to the trace and returns `null`, and every call site
+below falls back to a plain regex read.
+
+### Step 3 — deterministic parsers: pure code, conditionally run, LLM-judgment-assisted
+
+Still inside `appendTurn()`, three narrow parsers run — never through the LLM themselves,
+because a day/time, a phone number, or an email address really is a small closed vocabulary
+worth encoding directly, and none of it belongs in the fact ledger (logistics, not clinical
+history):
+
+| Parser | File | Runs when | Reads deterministically | Reads from Step 1b when available |
+|---|---|---|---|---|
+| `parseSchedulingPreference` | `preference.ts` | patient just asked to book, or already had | day of week / morning-afternoon out of raw text (fixed vocabulary — stays regex) | "soonest, no preference" (open-ended — LLM judgment, regex is the fallback) |
+| `parseEscortReply` | `escort.ts` | the *previous* decision's gate was `"escort"` | a phone number and/or email out of raw text (fixed shape — stays regex) | decline vs. provided (open-ended — LLM judgment, regex is the fallback) |
+| `parseShippingAddress` | `shipping.ts` | the *previous* decision's gate was `"shipping"` | — | decline vs. provided (open-ended — LLM judgment, regex is the fallback) |
+
+```
+Input:  content (raw patient text), gated on session.decisions.at(-1)?.gate,
+        soonestOk/declined from Step 1b when that call ran and succeeded
 Output: session.schedulingPreference | session.escortContact | session.shippingAddress
         (each set at most once per session; null while unanswered)
 ```
@@ -359,8 +392,9 @@ than aspirational.
 | `advance_scheduling` tool call | ElevenLabs platform | browser (client tool) | every voice turn | no — just a pass-through |
 | `POST /api/session/:id/message` | browser | our Express server | every turn, both mediums | no — routing only |
 | `extractTurn` (OpenAI #1) | our server | `api.openai.com` | every turn with non-empty patient text | facts/signals only, not the outcome |
+| `classifySoonestPreference` / `classifyDecline` (OpenAI #1b) | our server | `api.openai.com` | conditionally — same turns the preference/escort/shipping parsers below apply to; started concurrently with #1, not after it | soonest-vs-specific / decline-vs-provided judgment only, not the outcome |
 | `applyOperations` | our server | our server (in-process) | every turn | no — mechanical |
-| preference/escort/shipping parsers | our server | our server (in-process) | conditionally | no — regex |
+| preference/escort/shipping parsers | our server | our server (in-process) | conditionally | phone/email/day-of-week: no — regex. soonest/decline: LLM judgment from #1b when available, regex fallback otherwise |
 | `decide()` | our server | our server (in-process) | every turn | **yes — this is the one decision-maker** |
 | `scheduleScreening` + invites | our server | our server (in-process, mocked) | ACT only | no — mechanical, deterministic |
 | `composeReply` (OpenAI #2) | our server | `api.openai.com` | conditionally (skipped on ACT, on neutral non-repeats) | tone of the acknowledgment only, never the substance |
@@ -380,7 +414,9 @@ identical minus the top and bottom ElevenLabs layers.
 
 Per patient turn, voice mode:
 - ElevenLabs ASR + turn-detection: near-instant once the patient stops talking (not our code).
-- `extractTurn` (OpenAI #1): the dominant cost, roughly 0.5–2s.
+- `extractTurn` (OpenAI #1) and, on turns where it applies, `classifySoonestPreference` /
+  `classifyDecline` (OpenAI #1b) run **concurrently** via `Promise.all` — the dominant cost
+  is whichever of the two is slower, roughly 0.5–2s either way, not their sum.
 - Ledger apply + parsers + `decide()`: microseconds — no I/O.
 - `scheduleScreening` (ACT only): microseconds — in-memory mock, no external API.
 - `composeReply` (OpenAI #2, conditional): another 0.3–1s when it runs at all.
@@ -401,10 +437,11 @@ see `docs/app-guide.md` feature 14.
 |---|---|
 | Session state, the per-turn orchestration (`appendTurn`, `runDecision`, `exchange`) | `server/src/sessions.ts` |
 | OpenAI call #1 — fact/signal extraction | `server/src/extract-turn.ts` |
+| OpenAI call #1b — soonest/decline logistics judgment (conditional, concurrent with #1) | `server/src/logistics-llm.ts` |
 | The fact ledger itself (identity, dedup, contradiction) | `server/src/ledger.ts` |
 | The gates — the one and only decision-maker | `server/src/decide.ts` |
 | The guideline table + slot vocabulary the gates read | `server/src/requirements.ts` |
-| Day/time, escort, shipping parsers | `server/src/preference.ts`, `server/src/escort.ts`, `server/src/shipping.ts` |
+| Day/time, escort, shipping parsers (regex, LLM-judgment-assisted) | `server/src/preference.ts`, `server/src/escort.ts`, `server/src/shipping.ts` |
 | Mock booking, invites, prep-kit shipment | `server/src/scheduler.ts` |
 | OpenAI call #2 — acknowledgment | `server/src/compose.ts` |
 | The one place either OpenAI call actually happens | `server/src/llm.ts` |
