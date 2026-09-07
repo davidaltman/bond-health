@@ -443,6 +443,24 @@ Organized by how much they matter.
 - **Single session only.** Nothing persists across calls. The `provenance` field on facts is shaped to
   support multi-session resume later, but the "what's stale, what needs re-confirming" logic doesn't
   exist yet.
+- **A barge-in can desync "what gate we asked" from "what the patient actually heard," in voice
+  mode.** Found live in `conv_5801m1wffesjfczr9cwgk3pd90m4`: the patient said "Grab the soonest early
+  morning opening," which the backend fully processed — it satisfied the scheduling gate and moved on
+  to ask the escort/pickup question — but ElevenLabs discarded that reply before speaking it
+  (`"Tool execution was abandoned due to user input"`, i.e. the patient started talking again before
+  Daphne got to it). The patient's next words, "During the week" — a reasonable continuation of the
+  day/time answer he thought he was still giving — arrived as a fresh turn. `sessions.ts` decides
+  which deterministic parser to run purely by "what gate fired last" (`session.decisions.at(-1)?.gate
+  === "escort"`), with no way to know that question never actually reached him, so `escort.ts` parsed
+  "During the week" as the pickup contact's name. It rode all the way into the booking confirmation:
+  *"I've sent a calendar invite to During the week for the pickup."* There is currently no signal
+  available to our backend that a spoken reply was abandoned — the browser's tool-call handler in
+  `useVoiceSchedulingConversation.ts` already resolves with the string before ElevenLabs decides not
+  to speak it, so nothing tells the session "roll that turn back." Not yet fixed; flagged here rather
+  than patched blind, since the honest fix needs either a plausibility guard on `escort.ts`/`shipping.ts`
+  (reject an answer that looks exactly like a bare day/time phrase) or a way to detect the abandonment
+  client-side (unconfirmed whether `@elevenlabs/client` exposes that event at all) — a real design
+  choice, not a one-line patch.
 
 **Resolved since earlier drafts of this document:**
 
