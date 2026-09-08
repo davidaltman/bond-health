@@ -23,7 +23,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { EscortContact } from "./escort.js";
-import type { ShippingAddress } from "./shipping.js";
+import { deriveShippingLine, type ShippingAddress } from "./shipping.js";
 import { type SchedulingPreference, type TimeOfDay } from "./preference.js";
 
 /** Colonoscopy needs prep, a driver, and a scoped room. Nothing inside three
@@ -210,12 +210,11 @@ export function scheduleDrinkPrepShipment(address: ShippingAddress | null, appoi
   const arrivesAt = new Date(new Date(appointmentStartsAt).getTime() - PREP_KIT_LEAD_DAYS * 24 * 60 * 60 * 1000);
   return {
     ordered: true,
-    // Trailing sentence punctuation from the patient's own reply ("123 Main
-    // St, Apt 2.") reads fine on its own but doubles up once this gets
-    // stitched into "ships to {address}, arriving by..." -- stripped here,
-    // display-only, same reasoning as escort.ts's label vs raw. The
-    // ShippingAddress the parser returned stays untouched as the real record.
-    address: address.raw.replace(/[.\s]+$/, ""),
+    // Display-only: strip leading command phrases ("Send it to 124 Main St")
+    // and trailing sentence punctuation so the spoken line doesn't read
+    // "ships to Send it to 124 Main St, arriving by...". Same raw-vs-label
+    // split as escort.ts -- ShippingAddress.raw stays the audit record.
+    address: deriveShippingLine(address.raw),
     arrivesAt: arrivesAt.toISOString(),
     trackingId: `PK-${randomUUID().slice(0, 8).toUpperCase()}`,
   };

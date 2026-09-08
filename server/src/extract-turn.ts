@@ -91,16 +91,21 @@ STATUS -- read this carefully, it is the field most often gotten wrong.
 "unknown"  mentioned but the patient does not know, or they did not say
 
 "never" is only for an explicit stated negative: "I've never had a colonoscopy",
-"nobody in my family has had cancer". Record that as an "add" with status
-"never" -- it is real information, not an absence. Do not invent a "never" fact
-for a topic simply because it has not come up.
+"nobody in my family has had cancer", a bare "nope" or "nah" answering a
+question just asked. Record that as an "add" with status "never" -- it is real
+information, not an absence. Do not invent a "never" fact for a topic simply
+because it has not come up.
 
 DENIALS ARE FACTS. If Daphne just asked about something and the patient says no,
 you must record it. "No bleeding, no weight loss, nothing like that" in answer
 to a symptom question is three separate "add" operations with status "never",
 not an empty operations list. Returning nothing there loses the answer and
 Daphne will ask again. Answering a question about several things at once
-produces one operation per thing.
+produces one operation per thing. A one-word denial ("no", "nope", "nah")
+answering that kind of question is still a denial of each thing asked -- one
+"never" add per thing, source_quote set to the patient's actual word. Do not
+return an empty operations list just because the reply didn't echo the symptom
+words.
 
 A request is not a fact. "Can you book it for me" tells us what the patient
 wants, which is carried by request_type below, and must not become a clinical
@@ -239,9 +244,19 @@ function pick<T extends string>(value: string, allowed: T[], fallback: T): T {
   return (allowed as string[]).includes(value) ? (value as T) : fallback;
 }
 
-/** Any of the ordinary ways a reply states an explicit negative. */
+/**
+ * Any of the ordinary ways a reply states an explicit negative.
+ *
+ * Colloquial one-word denials (nope/nah/nada/naw/nuh-uh) have to be listed
+ * as their own alternatives: `\bno\b` is a whole-word match, so it does not
+ * fire inside "nope". Found live in conv_6201m1xb7n63f4darfd5jw8064e8: a
+ * patient answering the red-flag question with "Nope." had the resulting
+ * "never" silently downgraded to "unknown", and the identical question
+ * fired again. Do not drop the word-boundary on `no` to close that gap --
+ * that would false-positive on "known", "nonetheless", "denominator".
+ */
 const NEGATION_PATTERN =
-  /\b(no|not|never|none|nobody|nothing|neither|denies?|denying|didn't|doesn't|hasn't|haven't|isn't|wasn't)\b/i;
+  /\b(no|not|never|none|nobody|nothing|neither|denies?|denying|didn't|doesn't|hasn't|haven't|isn't|wasn't|nope|nah|nada|naw|nuh-uh)\b/i;
 
 /**
  * "never" is only ever correct when the quote itself actually negates
@@ -254,8 +269,11 @@ const NEGATION_PATTERN =
  * "add" claiming "never" without a negation word in its own source quote is
  * downgraded to "unknown", which is always a safe fallback (it costs an extra
  * ask; a wrong "never" costs a fact silently going missing).
+ *
+ * Exported so scripts/test_negation.mjs can pin the colloquial-denial
+ * regression without a live model call.
  */
-function coerceStatus(op: string, status: FactStatus | null, sourceQuote: string): FactStatus | null {
+export function coerceStatus(op: string, status: FactStatus | null, sourceQuote: string): FactStatus | null {
   if (op === "add" && status === "never" && !NEGATION_PATTERN.test(sourceQuote)) {
     return "unknown";
   }

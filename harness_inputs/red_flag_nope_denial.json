@@ -1,0 +1,27 @@
+{
+  "name": "red_flag_nope_denial",
+  "mode": "text",
+  "sessionMode": "scheduling_only",
+  "description": "Regression for conv_6201m1xb7n63f4darfd5jw8064e8. A patient answering the red-flag question with a bare 'Nope.' must count as a denial: extractTurn has to record it, coerceStatus must not downgrade 'never' to 'unknown' just because 'nope' isn't a whole-word 'no', and the safety gate must not re-ask. Matches the live transcript's scheduling_only shape (greeting straight into the red-flag question, no sufficiency/eligibility).",
+  "patientName": "David",
+  "patientAge": 55,
+  "turns": [
+    {
+      "role": "user",
+      "content": "I need to schedule a colonoscopy.",
+      "expectOutcome": "ASK",
+      "expectGate": "safety"
+    },
+    {
+      "role": "user",
+      "content": "Nope.",
+      "expectOutcome": "ASK",
+      "expectGate": "readiness",
+      "expectReplyNotContains": "any bleeding"
+    }
+  ],
+  "expect": {
+    "neverOutcome": ["HANDOFF", "STOP"],
+    "facts": [{ "subject": "self", "match": "bleed|weight|bowel|habit|anemia|symptom", "status": "never" }]
+  }
+}

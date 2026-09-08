@@ -30,7 +30,7 @@ import {
 import { describePreference, parseSchedulingPreference, type SchedulingPreference } from "./preference.js";
 import { parseEscortReply, type EscortContact } from "./escort.js";
 import { parseShippingAddress, type ShippingAddress } from "./shipping.js";
-import { classifyDecline, classifySoonestPreference } from "./logistics-llm.js";
+import { classifyClosingIntent, classifyDecline, classifySoonestPreference } from "./logistics-llm.js";
 import {
   applyOperations,
   createLedger,
@@ -216,19 +216,26 @@ export async function appendTurn(
           .find((candidate) => candidate.role === "agent")?.content ?? null;
 
       // Which gate this turn is answering is already known from the *last*
-      // decision and the sticky bookingRequested flag -- neither depends on
-      // this turn's extraction -- so the logistics judgment call (see
-      // logistics-llm.ts) can start at the same time as extraction rather
-      // than after it. Promise.all below is what makes that concurrent
-      // instead of sequential; skipped entirely on turns where no gate makes
-      // it relevant, so an ordinary history-taking turn never pays for it.
+      // decision, the sticky bookingRequested flag, and whether a resolution
+      // already exists -- none of those depend on this turn's extraction --
+      // so the logistics judgment call (see logistics-llm.ts) can start at
+      // the same time as extraction rather than after it. Promise.all below
+      // is what makes that concurrent instead of sequential; skipped entirely
+      // on turns where no gate makes it relevant, so an ordinary
+      // history-taking turn never pays for it. expectingClosingIntent is the
+      // same idea for post-booking follow-ups: session.resolution is already
+      // set before this turn's extractTurn runs.
       const priorGate = session.decisions.at(-1)?.gate ?? null;
       const expectingSchedulingPreference = session.bookingRequested && !session.schedulingPreference;
       const expectingEscort = priorGate === "escort" && !session.escortContact;
       const expectingShipping = priorGate === "shipping" && !session.shippingAddress;
+      const expectingClosingIntent = session.resolution != null;
 
       const logisticsCall: Promise<
-        { kind: "soonest"; soonestOk: boolean } | { kind: "decline"; declined: boolean } | null
+        | { kind: "soonest"; soonestOk: boolean }
+        | { kind: "decline"; declined: boolean }
+        | { kind: "closing"; intent: "closing" | "details" | "other" }
+        | null
       > = expectingSchedulingPreference
         ? classifySoonestPreference({ question: precedingAgentTurn, reply: content }).then(
             (judgment) => ({ kind: "soonest" as const, ...judgment }),
@@ -241,7 +248,11 @@ export async function appendTurn(
             ? classifyDecline({ askedFor: "shipping_address", question: precedingAgentTurn, reply: content }).then(
                 (judgment) => ({ kind: "decline" as const, ...judgment }),
               )
-            : Promise.resolve(null);
+            : expectingClosingIntent
+              ? classifyClosingIntent({ reply: content }).then(
+                  (judgment) => ({ kind: "closing" as const, ...judgment }),
+                )
+              : Promise.resolve(null);
 
       const [extraction, logisticsJudgment] = await Promise.all([
         extractTurn({
@@ -250,7 +261,7 @@ export async function appendTurn(
           patientTurn: content,
         }),
         // A failed logistics call degrades to the regex fallback inside
-        // preference.ts/escort.ts/shipping.ts, same discipline as
+        // preference.ts/escort.ts/shipping.ts/decide.ts, same discipline as
         // extractTurn's own catch block below -- it must never take the
         // turn's already-successful extraction down with it, which is why
         // this has its own catch rather than sharing the outer try/catch.
@@ -314,7 +325,10 @@ export async function appendTurn(
         session.shippingAddress = parseShippingAddress(content, declined);
       }
 
-      runDecision(session, turn.index, content);
+      runDecision(session, turn.index, {
+        patientTurn: content,
+        closingIntent: logisticsJudgment?.kind === "closing" ? logisticsJudgment.intent : null,
+      });
     } catch (error) {
       session.trace.push({
         turn: turn.index,
@@ -348,7 +362,14 @@ export async function appendTurn(
  * suite can assert on decisions without booking anything, and a reviewer can
  * replay the gates without touching the scheduler.
  */
-function runDecision(session: Session, turn: number, patientTurn: string): void {
+function runDecision(
+  session: Session,
+  turn: number,
+  extras: {
+    patientTurn: string;
+    closingIntent: "closing" | "details" | "other" | null;
+  },
+): void {
   const decision = decide({
     turn,
     patientAge: session.patientAge,
@@ -360,7 +381,8 @@ function runDecision(session: Session, turn: number, patientTurn: string): void 
     schedulingPreference: session.schedulingPreference,
     escortContact: session.escortContact,
     shippingAddress: session.shippingAddress,
-    patientTurn,
+    patientTurn: extras.patientTurn,
+    closingIntent: extras.closingIntent,
     booking: bookingSummary(session.resolution),
     waitlist: waitlistSummary(session.resolution),
     mode: session.mode,

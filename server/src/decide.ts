@@ -57,18 +57,30 @@ export type Outcome = "ACT" | "ASK" | "STOP" | "HANDOFF";
  */
 export type SessionMode = "full" | "scheduling_only";
 
+/**
+ * Listed in the order decide() actually checks them, not alphabetically or
+ * by some other convenience grouping -- this type is documentation as much
+ * as it is a type, and an out-of-order list here is exactly the kind of
+ * thing that misleads someone reading this file top-to-bottom without
+ * tracing the actual if/return sequence below. "safety" appears once here
+ * even though the function checks it twice (an active red flag, and later,
+ * red flags never having been asked about at all -- see the two "Gate:
+ * safety" comments below). "stuck" isn't a sequential position at all; it's
+ * the shared escalation `giveUp()` falls into from inside the sufficiency
+ * and second safety checks, not a gate reached in its own turn.
+ */
 export type GateName =
   | "scope"
   | "safety"
+  | "already_resolved"
   | "sufficiency"
-  | "readiness"
   | "eligibility"
+  | "readiness"
   | "scheduling"
   | "escort"
   | "shipping"
-  | "already_resolved"
-  | "stuck"
-  | "act";
+  | "act"
+  | "stuck";
 
 /**
  * How many times the engine may ask for the same thing before giving up on it.
@@ -90,30 +102,35 @@ const MAX_ASKS_PER_SLOT = 3;
 const SCHEDULING_ONLY_BOOKING_WINDOW_DAYS = 30;
 
 /**
- * Recognizes a question about a booking that already exists (the date, the
+ * Fallback for a question about a booking that already exists (the date, the
  * confirmation number, the clinic) so the already_resolved gate can answer
  * it instead of repeating the same "you're all set" line no matter what was
  * asked -- the exact bug a live transcript turned up: "what's the date
- * again?" three times in a row got the identical non-answer each time. This
- * is the one place decide() looks at raw turn text rather than structured
- * state, because there is nothing to extract into a fact here -- the answer
- * already exists, in full, on the booking made earlier this session.
+ * again?" three times in a row got the identical non-answer each time.
+ *
+ * The primary judgment is classifyClosingIntent in logistics-llm.ts, passed
+ * in as closingIntent. This pattern is only the fallback for when that call
+ * failed or wasn't made, same discipline as UNAMBIGUOUS_SOONEST_PATTERN /
+ * DECLINE_PATTERN. Keep it -- do not delete it.
  */
 const BOOKING_DETAIL_PATTERN = /\b(date|when|day|time|calendar|confirm(ation|ed)?|clinic|where)\b/i;
 
 /**
- * Recognizes the patient signaling they're done -- a plain "no, that's it" or
- * "nothing else" -- so already_resolved can close the conversation instead of
- * asking "anything else I can help with?" a second time. Checked before
+ * Fallback for the patient signaling they're done -- a plain "no, that's it"
+ * or "nothing else" -- so already_resolved can close the conversation instead
+ * of asking "anything else I can help with?" a second time. Checked before
  * BOOKING_DETAIL_PATTERN, since a farewell wins over an incidental word match
- * ("no, that's it, don't need the date" is still a farewell). This exists
- * because of a live voice call where the patient's silence after an
- * unanswered "anything else?" got fed back through as another turn, and the
- * generic line repeated verbatim -- see agent_configs/
- * 05_daphne_scheduling_voice.create.json's now-fixed `end_call` wiring for
- * the other half of that bug. This half matters independent of that fix:
- * text mode has no call to end, so without this the same repeat would still
- * read as "not listening" there too.
+ * ("no, that's it, don't need the date" is still a farewell).
+ *
+ * Same fallback role as BOOKING_DETAIL_PATTERN: classifyClosingIntent is the
+ * primary read (open-ended phrasing has no enumerable list); this fires only
+ * when closingIntent is null. This exists because of a live voice call where
+ * the patient's silence after an unanswered "anything else?" got fed back
+ * through as another turn, and the generic line repeated verbatim -- see
+ * agent_configs/05_daphne_scheduling_voice.create.json's now-fixed `end_call`
+ * wiring for the other half of that bug. This half matters independent of
+ * that fix: text mode has no call to end, so without this the same repeat
+ * would still read as "not listening" there too.
  */
 const CLOSING_PATTERN =
   /\b(?:that'?s (?:it|all)|nothing else|no,? thanks?(?: you)?|i'?m (?:good|all set|all done|done)|we'?re (?:good|all set|done)|no more questions)\b/i;
@@ -210,13 +227,19 @@ export interface DecisionInput {
    *  decline), or null while still waiting on that ask. See shipping.ts and
    *  the "shipping" gate below. Same non-blocking shape as escortContact. */
   shippingAddress: ShippingAddress | null;
-  /** The current turn's raw text, verbatim. Used only by already_resolved,
-   *  to tell "what's the date again?" apart from anything else a patient
-   *  might say once already booked -- see BOOKING_DETAIL_PATTERN. Every
-   *  other gate in this file reads structured facts/signals instead; this is
-   *  the one deliberate exception, because recalling an already-decided
-   *  answer isn't a new decision that belongs behind extraction. */
+  /** The current turn's raw text, verbatim. Used by already_resolved only
+   *  when closingIntent is null -- the regex fallback for a failed or skipped
+   *  classifyClosingIntent call. Every other gate in this file reads
+   *  structured facts/signals instead. */
   patientTurn: string;
+  /**
+   * Already-resolved logistics judgment from classifyClosingIntent, or null
+   * when that call wasn't made or failed. decide() never calls out itself;
+   * this arrives as plain data, same as schedulingPreference / escortContact.
+   * Null means fall back to CLOSING_PATTERN / BOOKING_DETAIL_PATTERN on
+   * patientTurn.
+   */
+  closingIntent: "closing" | "details" | "other" | null;
   /** The existing booking's details, once one exists, so already_resolved
    *  has something to answer with. Null before a booking exists, and null
    *  (not a booking) when the resolution was a waitlist -- see `waitlist`
@@ -294,7 +317,19 @@ export function decide(input: DecisionInput): Decision {
   }
 
   if (input.alreadyResolved) {
-    if (CLOSING_PATTERN.test(input.patientTurn)) {
+    // Farewell vs. "what's the date again?" vs. anything else. Prefer the
+    // already-resolved logistics judgment when present; fall back to the
+    // regexes when the call failed or wasn't made. Closing wins when both
+    // would apply, matching the old check order.
+    const closing =
+      input.closingIntent != null
+        ? input.closingIntent === "closing"
+        : CLOSING_PATTERN.test(input.patientTurn);
+    const wantsDetails =
+      input.closingIntent != null
+        ? input.closingIntent === "details"
+        : BOOKING_DETAIL_PATTERN.test(input.patientTurn);
+    if (closing) {
       return {
         ...base,
         outcome: "ASK",
@@ -306,7 +341,7 @@ export function decide(input: DecisionInput): Decision {
           : "Sounds good — I'll keep watching that cancellation list for you and reach out the moment something opens up. Take care in the meantime.",
       };
     }
-    if (input.booking && BOOKING_DETAIL_PATTERN.test(input.patientTurn)) {
+    if (input.booking && wantsDetails) {
       return {
         ...base,
         outcome: "ASK",
@@ -318,7 +353,7 @@ export function decide(input: DecisionInput): Decision {
           `is ${input.booking.confirmationId}. Anything else I can help with?`,
       };
     }
-    if (input.waitlist && BOOKING_DETAIL_PATTERN.test(input.patientTurn)) {
+    if (input.waitlist && wantsDetails) {
       return {
         ...base,
         outcome: "ASK",

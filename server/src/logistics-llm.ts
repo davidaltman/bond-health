@@ -7,24 +7,26 @@
  * preference.ts -- that's a closed set of seven words plus two, and asking a
  * model to reproduce a fixed set turn after turn buys nothing (see that
  * file's own doc comment). But "does this reply mean take the soonest
- * opening" and "is this a decline" are open-ended judgments over phrasing
- * nobody enumerated in advance -- "whatever's easiest," "I'll just grab one
- * myself," "not really, no" -- exactly the case this app already trusts a
- * model for everywhere else (see extract-turn.ts). Keeping them as regex
- * only meant the pattern list kept growing every time a real transcript
- * found a gap it didn't cover.
+ * opening," "is this a decline," and "is this a farewell or a request for
+ * booking details" are open-ended judgments over phrasing nobody enumerated
+ * in advance -- "whatever's easiest," "I'll just grab one myself," "I think
+ * that covers it," "who's it with?" -- exactly the case this app already
+ * trusts a model for everywhere else (see extract-turn.ts). Keeping them as
+ * regex only meant the pattern list kept growing every time a real
+ * transcript found a gap it didn't cover.
  *
  * Called from sessions.ts, in parallel with extractTurn via Promise.all,
  * and only when the currently active gate makes the judgment relevant -- on
- * an ordinary clinical-history turn, where neither applies, this file makes
- * no call at all and adds no latency or cost. On a turn where it does apply,
- * it's one more small structured-output call alongside the one sessions.ts
- * is already making, started at the same time, not after it.
+ * an ordinary clinical-history turn, where none of these apply, this file
+ * makes no call at all and adds no latency or cost. On a turn where one
+ * does apply, it's one more small structured-output call alongside the one
+ * sessions.ts is already making, started at the same time, not after it.
  *
  * Same fallback discipline as elsewhere: a failed or skipped call here never
  * blocks the turn -- callers fall back to the old regex (see
- * preference.ts, escort.ts, shipping.ts), which is why those patterns are
- * still there instead of deleted.
+ * preference.ts, escort.ts, shipping.ts, and decide.ts's CLOSING_PATTERN /
+ * BOOKING_DETAIL_PATTERN), which is why those patterns are still there
+ * instead of deleted.
  */
 import { completeJson } from "./llm.js";
 
@@ -135,4 +137,51 @@ export async function classifyDecline(input: {
     reasoningEffort: "none",
   });
   return { declined: !!raw.declined };
+}
+
+const CLOSING_SYSTEM_PROMPT = `A scheduling assistant already told the patient about their existing
+booking or waitlist entry. Judge what THIS reply means.
+
+Answer "closing" if the patient is signaling they're done -- a goodbye, a
+plain thank-you with nothing further, or an indication there's nothing else
+they need.
+
+Answer "details" if the patient is asking for something about their existing
+booking/waitlist itself -- the date, time, clinic, confirmation number, or
+similar -- even if phrased indirectly ("where am I headed again?", "who's it
+with?", "remind me when that is").
+
+Answer "other" for anything else -- a new question, a change of topic, or
+something that doesn't fit either category.
+
+Output only JSON matching the schema.`;
+
+const CLOSING_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    intent: { type: "string", enum: ["closing", "details", "other"] },
+  },
+  required: ["intent"],
+};
+
+export interface ClosingIntentJudgment {
+  intent: "closing" | "details" | "other";
+}
+
+export async function classifyClosingIntent(input: {
+  reply: string;
+}): Promise<ClosingIntentJudgment> {
+  const raw = await completeJson<{ intent: "closing" | "details" | "other" }>({
+    system: CLOSING_SYSTEM_PROMPT,
+    user: `PATIENT REPLY\n${input.reply}`,
+    schemaName: "closing_intent",
+    schema: CLOSING_SCHEMA,
+    maxOutputTokens: 256,
+    reasoningEffort: "none",
+  });
+  const intent = raw.intent;
+  return {
+    intent: intent === "closing" || intent === "details" || intent === "other" ? intent : "other",
+  };
 }

@@ -8,7 +8,7 @@
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/index.js",
-    "eval": "npx tsx ../scripts/test_preference.mjs && node ../scripts/replay_session.mjs ../harness_inputs/*.json"
+    "eval": "npx tsx ../scripts/test_preference.mjs && npx tsx ../scripts/test_negation.mjs && npx tsx ../scripts/test_shipping.mjs && node ../scripts/replay_session.mjs ../harness_inputs/*.json"
   },
   "dependencies": {
     "cors": "^2.8.6",
