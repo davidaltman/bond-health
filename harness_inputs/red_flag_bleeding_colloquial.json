@@ -1,0 +1,29 @@
+{
+  "name": "red_flag_bleeding_colloquial",
+  "mode": "text",
+  "sessionMode": "scheduling_only",
+  "description": "Patient answers the authored red-flag question using the same word the question used ('Yeah, I've had bleeding.') rather than 'blood in my stool'. Must HANDOFF via safety and must not re-ask the identical question. The more specific GI phrasing is already covered by red_flag_bleeding.json; this pins the everyday answer that previously never filled the rectal_bleeding slot.",
+  "patientName": "David",
+  "patientAge": 55,
+  "turns": [
+    {
+      "role": "user",
+      "content": "A colonoscopy.",
+      "expectOutcome": "ASK",
+      "expectGate": "safety"
+    },
+    {
+      "role": "user",
+      "content": "Yeah, I've had bleeding.",
+      "expectOutcome": "HANDOFF",
+      "expectGate": "safety",
+      "expectReplyNotContains": "any bleeding"
+    }
+  ],
+  "expect": {
+    "finalOutcome": "HANDOFF",
+    "neverOutcome": ["ACT"],
+    "resolution": "none",
+    "facts": [{ "subject": "self", "match": "bleed", "status": "active" }]
+  }
+}

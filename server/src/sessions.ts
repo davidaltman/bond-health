@@ -31,12 +31,14 @@ import { describePreference, parseSchedulingPreference, type SchedulingPreferenc
 import { parseEscortReply, type EscortContact } from "./escort.js";
 import { parseShippingAddress, type ShippingAddress } from "./shipping.js";
 import { classifyClosingIntent, classifyDecline, classifySoonestPreference } from "./logistics-llm.js";
+import { classifyRedFlagSymptoms } from "./red-flag-llm.js";
 import {
   applyOperations,
   createLedger,
   liveFacts,
   summarizeForPrompt,
   type AppliedOperation,
+  type ProposedOperation,
   type ClinicalFact,
   type ConversationSignals,
   type LedgerState,
@@ -218,23 +220,29 @@ export async function appendTurn(
       // Which gate this turn is answering is already known from the *last*
       // decision, the sticky bookingRequested flag, and whether a resolution
       // already exists -- none of those depend on this turn's extraction --
-      // so the logistics judgment call (see logistics-llm.ts) can start at
-      // the same time as extraction rather than after it. Promise.all below
-      // is what makes that concurrent instead of sequential; skipped entirely
-      // on turns where no gate makes it relevant, so an ordinary
-      // history-taking turn never pays for it. expectingClosingIntent is the
-      // same idea for post-booking follow-ups: session.resolution is already
-      // set before this turn's extractTurn runs.
-      const priorGate = session.decisions.at(-1)?.gate ?? null;
+      // so the conditional judgment call (see logistics-llm.ts and
+      // red-flag-llm.ts) can start at the same time as extraction rather
+      // than after it. Promise.all below is what makes that concurrent
+      // instead of sequential; skipped entirely on turns where no gate makes
+      // it relevant, so an ordinary history-taking turn never pays for it.
+      // expectingClosingIntent is the same idea for post-booking follow-ups:
+      // session.resolution is already set before this turn's extractTurn
+      // runs. expectingRedFlagAnswer is the same idea for the turn right
+      // after decide() asked RED_FLAG_QUESTION (missingSlot is set only for
+      // that ask, never for the earlier already-a-red-flag HANDOFF branch).
+      const priorDecision = session.decisions.at(-1) ?? null;
+      const priorGate = priorDecision?.gate ?? null;
       const expectingSchedulingPreference = session.bookingRequested && !session.schedulingPreference;
       const expectingEscort = priorGate === "escort" && !session.escortContact;
       const expectingShipping = priorGate === "shipping" && !session.shippingAddress;
       const expectingClosingIntent = session.resolution != null;
+      const expectingRedFlagAnswer = priorDecision?.missingSlot === "red_flag_symptoms";
 
-      const logisticsCall: Promise<
+      const conditionalCall: Promise<
         | { kind: "soonest"; soonestOk: boolean }
         | { kind: "decline"; declined: boolean }
         | { kind: "closing"; intent: "closing" | "details" | "other" }
+        | { kind: "redFlags"; flags: string[] }
         | null
       > = expectingSchedulingPreference
         ? classifySoonestPreference({ question: precedingAgentTurn, reply: content }).then(
@@ -252,25 +260,31 @@ export async function appendTurn(
               ? classifyClosingIntent({ reply: content }).then(
                   (judgment) => ({ kind: "closing" as const, ...judgment }),
                 )
-              : Promise.resolve(null);
+              : expectingRedFlagAnswer
+                ? classifyRedFlagSymptoms({ reply: content }).then(
+                    (judgment) => ({ kind: "redFlags" as const, ...judgment }),
+                  )
+                : Promise.resolve(null);
 
-      const [extraction, logisticsJudgment] = await Promise.all([
+      const [extraction, conditionalJudgment] = await Promise.all([
         extractTurn({
           factsOnFile: summarizeForPrompt(session.ledger),
           precedingAgentTurn,
           patientTurn: content,
         }),
-        // A failed logistics call degrades to the regex fallback inside
-        // preference.ts/escort.ts/shipping.ts/decide.ts, same discipline as
-        // extractTurn's own catch block below -- it must never take the
-        // turn's already-successful extraction down with it, which is why
-        // this has its own catch rather than sharing the outer try/catch.
-        logisticsCall.catch((error) => {
+        // A failed call degrades to the regex fallback inside
+        // preference.ts/escort.ts/shipping.ts/decide.ts, or to extractTurn's
+        // own general symptom handling for red flags (see red-flag-llm.ts's
+        // header comment) -- same discipline as extractTurn's own catch
+        // block below -- it must never take the turn's already-successful
+        // extraction down with it, which is why this has its own catch
+        // rather than sharing the outer try/catch.
+        conditionalCall.catch((error) => {
           session.trace.push({
             turn: turn.index,
             at: new Date().toISOString(),
             kind: "extraction_failed",
-            detail: `logistics classification failed, falling back to regex: ${
+            detail: `conditional classification failed, falling back to regex: ${
               error instanceof Error ? error.message : String(error)
             }`,
           });
@@ -278,7 +292,34 @@ export async function appendTurn(
         }),
       ]);
 
-      applied = applyOperations(session.ledger, extraction.operations, turn.index);
+      // A red-flag judgment becomes ordinary ProposedOperation "add"s,
+      // merged with extractTurn's own, so decide() never learns this call
+      // exists -- it just sees more facts on the ledger, same as any other
+      // turn. Deliberately not deduped against whatever attribute
+      // extractTurn itself chose for the same statement (e.g. "bleeding"):
+      // two ledger rows for one real-world symptom is a minor cosmetic
+      // redundancy, not a correctness problem, and requirements.ts's exact
+      // canonical-attribute match only needs one of them to fire the safety
+      // gate.
+      const redFlagOps: ProposedOperation[] =
+        conditionalJudgment?.kind === "redFlags"
+          ? conditionalJudgment.flags.map((attribute) => ({
+              op: "add",
+              factRef: null,
+              subject: "self",
+              category: "symptom",
+              attribute,
+              value: content,
+              onsetAge: null,
+              lastOccurred: null,
+              status: "active",
+              confidence: "high",
+              sourceQuote: content,
+              note: null,
+            }))
+          : [];
+
+      applied = applyOperations(session.ledger, [...extraction.operations, ...redFlagOps], turn.index);
       session.signals = { turn: turn.index, ...extraction.signals };
       session.trace.push({
         turn: turn.index,
@@ -296,14 +337,14 @@ export async function appendTurn(
       // justAskedToBook covers the one turn where a booking request and a
       // preference arrive in the same breath ("sure, book it, but early
       // Monday mornings work best") -- session.bookingRequested isn't sticky
-      // yet at the point logisticsCall was kicked off above, so that one
+      // yet at the point conditionalCall was kicked off above, so that one
       // turn's soonest judgment (if any) never got started concurrently.
       // Falling back to a plain regex read here rather than firing a second,
       // sequential LLM call keeps that rare turn fast at the cost of using
       // the less precise signal exactly once, which is an acceptable trade.
       const justAskedToBook = session.signals.readiness === "explicit_request";
       if ((justAskedToBook || session.bookingRequested) && !session.schedulingPreference) {
-        const soonestOk = logisticsJudgment?.kind === "soonest" ? logisticsJudgment.soonestOk : null;
+        const soonestOk = conditionalJudgment?.kind === "soonest" ? conditionalJudgment.soonestOk : null;
         const preference = parseSchedulingPreference(content, soonestOk);
         if (preference) session.schedulingPreference = preference;
       }
@@ -314,20 +355,20 @@ export async function appendTurn(
       // booking intent generally, which would risk reading a stray name
       // mentioned for some other reason as the pickup answer.
       if (session.decisions.at(-1)?.gate === "escort" && !session.escortContact) {
-        const declined = logisticsJudgment?.kind === "decline" ? logisticsJudgment.declined : null;
+        const declined = conditionalJudgment?.kind === "decline" ? conditionalJudgment.declined : null;
         session.escortContact = parseEscortReply(content, declined);
       }
 
       // Same reasoning again, one gate later: a shipping address only means
       // anything as the answer to the shipping gate's specific question.
       if (session.decisions.at(-1)?.gate === "shipping" && !session.shippingAddress) {
-        const declined = logisticsJudgment?.kind === "decline" ? logisticsJudgment.declined : null;
+        const declined = conditionalJudgment?.kind === "decline" ? conditionalJudgment.declined : null;
         session.shippingAddress = parseShippingAddress(content, declined);
       }
 
       runDecision(session, turn.index, {
         patientTurn: content,
-        closingIntent: logisticsJudgment?.kind === "closing" ? logisticsJudgment.intent : null,
+        closingIntent: conditionalJudgment?.kind === "closing" ? conditionalJudgment.intent : null,
       });
     } catch (error) {
       session.trace.push({

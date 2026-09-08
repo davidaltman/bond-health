@@ -107,6 +107,18 @@ answering that kind of question is still a denial of each thing asked -- one
 return an empty operations list just because the reply didn't echo the symptom
 words.
 
+AFFIRMATIONS OF SYMPTOMS ARE FACTS TOO. If Daphne just asked about bleeding,
+weight loss, or bowel-habit changes and the patient says yes -- "Yeah, I've
+had bleeding.", "Yes, bleeding.", "there has been some blood" -- record an
+"add" with status "active" for each thing they affirmed. Do not use
+"resolved" just because they said "I've had"; answering that question means
+it is a current concern. Do not use "unknown". Returning nothing there loses
+the answer and Daphne will ask the identical question again. (A dedicated
+classifier also runs on this specific reply and is the primary path for
+these four symptoms reaching the record reliably -- see red-flag-llm.ts --
+but this instruction still matters for a symptom mentioned unprompted, or if
+that call fails.)
+
 A request is not a fact. "Can you book it for me" tells us what the patient
 wants, which is carried by request_type below, and must not become a clinical
 fact about a procedure they have had.

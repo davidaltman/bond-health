@@ -11,6 +11,18 @@
  * here: free-text attributes resolve into a small fixed set of slots, and the
  * gates only ever speak in slots.
  *
+ * The four red-flag slots (see RED_FLAG_SLOTS) are the one place that split
+ * inverts. "Colonoscopy" wording variance is a genuinely small closed set --
+ * regex-matching it in code is safe. "Is there blood" is not: patients say
+ * spotting, streaks, dark stools, blood when wiping, or a bare "bleeding",
+ * and no phrase list is ever complete -- one gap here already produced a
+ * live repeated-question bug. So for those four slots the model itself does
+ * the canonicalization (extract-turn.ts's SYSTEM_PROMPT instructs it to
+ * output one of four exact attribute keys), and code does a plain exact-
+ * match against that key -- see redFlagSlotForCanonicalAttribute. The old
+ * regexes still run, but only as a fallback net for the rare turn where the
+ * model didn't canonicalize, not as the primary detector.
+ *
  * The guideline table below is hardcoded and physician-authored. The model
  * decides which facts are true; it never decides what the medically correct
  * screening age is, and it never writes patient-facing clinical wording.
@@ -46,13 +58,20 @@ export type Slot =
   | "bowel_habit_change"
   | "iron_deficiency_anemia";
 
-/** Slots that mean "this may not be routine screening". */
-export const RED_FLAG_SLOTS: Slot[] = [
+/** Slots that mean "this may not be routine screening". `as const` purely so
+ *  RedFlagSlot below can narrow to these four specific strings -- red-flag-llm.ts
+ *  imports both this array (for its schema enum / runtime validation) and
+ *  that type (for its function signatures), so the canonical vocabulary has
+ *  exactly one source of truth instead of two hand-typed lists that could
+ *  drift apart. */
+const RED_FLAG_SLOT_KEYS = [
   "rectal_bleeding",
   "unexplained_weight_loss",
   "bowel_habit_change",
   "iron_deficiency_anemia",
-];
+] as const;
+export type RedFlagSlot = (typeof RED_FLAG_SLOT_KEYS)[number];
+export const RED_FLAG_SLOTS: Slot[] = [...RED_FLAG_SLOT_KEYS];
 
 interface SlotMatcher {
   slot: Slot;
@@ -86,10 +105,47 @@ const SLOT_MATCHERS: SlotMatcher[] = [
     pattern: /stool test|stool sample|fit test|\bfit\b|cologuard|fecal|occult blood|\bfobt\b/i,
   },
   { slot: "colon_polyps", subject: "self", pattern: /polyp/i },
+  // The four red-flag slots are deliberately absent from this table -- see
+  // RED_FLAG_FALLBACK_PATTERNS below and redFlagSlotsForFact above it. A
+  // patient describing bleeding, weight loss, or a bowel-habit change has no
+  // finite phrase list ("spotting", "streaks", "dark stools", "clothes
+  // fitting looser" all mean the same red flag some other way); matching
+  // strings here is the exact mistake this file's own header comment already
+  // diagnosed for "colonoscopy" wording variance, just re-committed for a
+  // safety-critical vocabulary instead of a procedure name. A live case
+  // confirmed it: "Yeah, I've had bleeding." matched nothing in the old list
+  // and the safety question repeated until MAX_ASKS. The fix is not one more
+  // phrase -- it's asking the model to canonicalize (see extract-turn.ts's
+  // SYSTEM_PROMPT) and matching that canonical key exactly, the same
+  // model-does-the-open-ended-judgment split this codebase already uses for
+  // classifyDecline/classifyClosingIntent, applied to fact canonicalization
+  // instead of a side LLM call.
+];
+
+/**
+ * Whether a fact's attribute is already one of the four exact canonical red-
+ * flag keys extractTurn's system prompt instructs the model to produce.
+ * Checked before RED_FLAG_FALLBACK_PATTERNS -- an exact match on a value the
+ * model chose deliberately is trusted outright, no further guessing needed.
+ */
+function redFlagSlotForCanonicalAttribute(attribute: string): Slot | null {
+  return (RED_FLAG_SLOTS as string[]).includes(attribute) ? (attribute as Slot) : null;
+}
+
+/**
+ * Fallback only, for the rare turn where the model didn't canonicalize (a
+ * dropped extraction field, an older prompt still cached somewhere, a model
+ * that ignored the instruction). Not the primary mechanism -- see the
+ * comment where SLOT_MATCHERS omits these four slots. Because this is a
+ * safety net rather than the main path, it's intentionally narrower than an
+ * attempt to enumerate every real phrasing would be; the canonical-attribute
+ * path above is what's supposed to carry open-ended phrasing, not this.
+ */
+const RED_FLAG_FALLBACK_PATTERNS: SlotMatcher[] = [
   {
     slot: "rectal_bleeding",
     subject: "self",
-    pattern: /rectal bleed|blood in (the |my )?stool|bloody stool|blood when|hematochezia|bleeding from/i,
+    pattern: /rectal[_\s]?bleed|\bbleed|blood in (the |my )?stool|bloody stool|blood when|hematochezia/i,
   },
   {
     slot: "unexplained_weight_loss",
@@ -133,12 +189,23 @@ export function slotsForFact(fact: ClinicalFact): Slot[] {
   const familySlots = familyHistorySlotsForFact(fact);
   if (familySlots.length > 0) return familySlots;
 
-  const haystack = `${fact.attribute} ${fact.value}`;
   const isSelf = fact.subject === "self";
+
+  if (isSelf) {
+    const canonical = redFlagSlotForCanonicalAttribute(fact.attribute);
+    if (canonical) return [canonical];
+  }
+
+  const haystack = `${fact.attribute} ${fact.value}`;
   for (const matcher of SLOT_MATCHERS) {
     if (matcher.subject === "self" && !isSelf) continue;
     if (matcher.subject === "relative" && isSelf) continue;
     if (matcher.pattern.test(haystack)) return [matcher.slot];
+  }
+  if (isSelf) {
+    for (const matcher of RED_FLAG_FALLBACK_PATTERNS) {
+      if (matcher.pattern.test(haystack)) return [matcher.slot];
+    }
   }
   return [];
 }
@@ -379,12 +446,12 @@ export function recommendScreening(
   };
 }
 
-/** Red flags the patient currently has. Any one of these means this is not a
- *  routine screening question anymore. */
+/** Red flags the patient currently has, or recently had. Any one of these
+ *  means this is not a routine screening question anymore. `resolved` is
+ *  included on purpose: "I've had bleeding" answering the symptom question
+ *  is still a diagnostic presentation, even if the model tagged it past. */
 export function activeRedFlags(readings: Map<Slot, SlotReading>): SlotReading[] {
-  return RED_FLAG_SLOTS.map((slot) => readSlot(readings, slot)).filter(
-    (reading) => reading.status === "active",
-  );
+  return RED_FLAG_SLOTS.map((slot) => readSlot(readings, slot)).filter(isPresent);
 }
 
 /**

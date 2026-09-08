@@ -287,6 +287,19 @@ matters for text mode too, since it has no call to hang up but reads
 identically unresponsive without this. See app-guide's Features §9 and "Resolved since earlier
 drafts," and the last two turns of `text_mode_full_journey` in the eval suite.
 
+One more live bug, more serious than either of those: the safety gate's red-flag question
+("any bleeding, unexplained weight loss, or changes in your bowel habits?") kept re-asking
+itself after the patient had already answered it — "Yeah, I've had bleeding." never filled
+the `rectal_bleeding` slot, because `requirements.ts` matched that slot with a growing regex
+list, and this particular phrasing wasn't on it. The first instinct was to add the missing
+phrase; the actual fix was recognizing that instinct was the bug repeating itself one level
+up — there is no finite list of ways to say "there's blood," any more than there's one for
+"is this a decline." `classifyRedFlagSymptoms` in the new `red-flag-llm.ts` makes that an
+LLM judgment instead, the same discipline `classifyClosingIntent` already uses, with the old
+regex demoted to `RED_FLAG_FALLBACK_PATTERNS` — a safety net, not the detector. See
+`harness_inputs/red_flag_open_ended_llm.json`, which pins phrasing ("spotting," "pants
+fitting looser") that names none of the four tracked slots and would defeat any fixed list.
+
 ## Explicitly not doing (and what I'd build next)
 
 - **The original (legacy) voice agent, as anything more than a history-taking demo.** Its plumbing is

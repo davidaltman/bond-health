@@ -163,15 +163,20 @@ A turn with real clinical content produces operations too, e.g. for
 
 ```
 operations: [
-  { op: "add", subject: "self", category: "symptom", attribute: "rectal_bleeding",
+  { op: "add", subject: "self", category: "symptom", attribute: "bleeding",
     value: "no bleeding", status: "never", confidence: "high",
     source_quote: "No bleeding", ... },
-  { op: "add", subject: "self", category: "symptom", attribute: "weight_loss",
+  { op: "add", subject: "self", category: "symptom", attribute: "weight loss",
     value: "no weight loss", status: "never", ... },
-  { op: "add", subject: "self", category: "symptom", attribute: "bowel_habit_change",
+  { op: "add", subject: "self", category: "symptom", attribute: "bowel habit changes",
     value: "nothing like that", status: "never", ... }
 ]
 ```
+
+`attribute` here is whatever short free-text key the model picks in the moment — it is
+*not* asked to hit an exact canonical string, which is exactly why the red-flag symptoms
+get their own dedicated call (Step 1c) rather than relying on this one to canonicalize
+reliably.
 
 The system prompt is long and specific on purpose (full text in the file) — it's the thing
 standing between "the patient said X" and "the record says X", covering: never infer a
@@ -233,6 +238,39 @@ of history. A failed or skipped call here is never fatal: its own `.catch()` log
 `extraction_failed` to the trace and returns `null`, and every call site below falls back
 to a plain regex read (`CLOSING_PATTERN` / `BOOKING_DETAIL_PATTERN` in `decide.ts` for the
 closing case).
+
+### Step 1c — red-flag symptom judgment: OpenAI call #1c, conditional and concurrent with Step 1
+
+`server/src/red-flag-llm.ts`, `classifyRedFlagSymptoms()`. Same `Promise.all()` slot as
+Step 1b, gated on a different condition: `session.decisions.at(-1)?.missingSlot ===
+"red_flag_symptoms"` — the turn right after `decide()` asked `RED_FLAG_QUESTION` (see Step
+4's gate 5). An ordinary history-taking turn, or a turn answering any other question, never
+calls this.
+
+This exists for the same reason Step 1b does, applied to a safety-critical judgment instead
+of a logistics one: "any bleeding, weight loss, or bowel-habit changes?" gets answered with
+"yeah, I've had bleeding," "some spotting now and then," "my pants have been fitting looser"
+— an open-ended vocabulary with no finite phrase list. A real transcript hit exactly that
+gap once (`"Yeah, I've had bleeding."` matched nothing in `requirements.ts`'s old regex),
+and the safety gate kept re-asking the identical question forever. Model `gpt-5.4-mini`,
+`reasoning_effort: "none"` — a closed four-way read on one short reply needs no extra
+reasoning tokens.
+
+```
+Input:  reply (raw patient text)
+Output: { flags: Array<"rectal_bleeding" | "unexplained_weight_loss" |
+                       "bowel_habit_change" | "iron_deficiency_anemia"> }
+        -- possibly more than one, possibly empty
+```
+
+Its result is turned into ordinary `ProposedOperation` `"add"`s (status `"active"`, category
+`"symptom"`, attribute set to the exact canonical key) in `sessions.ts`, merged with
+`extractTurn`'s own operations array *before* `applyOperations` runs — `decide()` itself
+never learns this call exists; it just sees another fact on the ledger, matched by
+`requirements.ts`'s `redFlagSlotForCanonicalAttribute` (an exact-string check, not a regex).
+A failed or skipped call degrades to `extractTurn`'s own general symptom handling plus
+`requirements.ts`'s narrower `RED_FLAG_FALLBACK_PATTERNS` regex — a safety net, not the
+primary detector.
 
 ### Step 3 — deterministic parsers: pure code, conditionally run, LLM-judgment-assisted
 
@@ -399,6 +437,7 @@ than aspirational.
 | `POST /api/session/:id/message` | browser | our Express server | every turn, both mediums | no — routing only |
 | `extractTurn` (OpenAI #1) | our server | `api.openai.com` | every turn with non-empty patient text | facts/signals only, not the outcome |
 | `classifySoonestPreference` / `classifyDecline` / `classifyClosingIntent` (OpenAI #1b) | our server | `api.openai.com` | conditionally — preference/escort/shipping parsers, or a post-booking follow-up; started concurrently with #1, not after it | soonest-vs-specific / decline-vs-provided / closing-vs-details judgment only, not the outcome |
+| `classifyRedFlagSymptoms` (OpenAI #1c) | our server | `api.openai.com` | conditionally — only the turn right after the red-flag question was asked; started concurrently with #1, not after it | which red-flag symptom(s), if any, this reply affirms — becomes ledger facts, not a `decide()` input |
 | `applyOperations` | our server | our server (in-process) | every turn | no — mechanical |
 | preference/escort/shipping parsers | our server | our server (in-process) | conditionally | phone/email/day-of-week: no — regex. soonest/decline: LLM judgment from #1b when available, regex fallback otherwise |
 | `decide()` | our server | our server (in-process) | every turn | **yes — this is the one decision-maker** |
@@ -420,8 +459,10 @@ identical minus the top and bottom ElevenLabs layers.
 
 Per patient turn, voice mode:
 - ElevenLabs ASR + turn-detection: near-instant once the patient stops talking (not our code).
-- `extractTurn` (OpenAI #1) and, on turns where it applies, `classifySoonestPreference` /
-  `classifyDecline` / `classifyClosingIntent` (OpenAI #1b) run **concurrently** via `Promise.all` — the dominant cost
+- `extractTurn` (OpenAI #1) and, on turns where one applies, `classifySoonestPreference` /
+  `classifyDecline` / `classifyClosingIntent` (OpenAI #1b) or `classifyRedFlagSymptoms`
+  (OpenAI #1c) run **concurrently** via `Promise.all` — at most one of #1b/#1c ever fires on
+  a given turn, so this is still exactly two calls in flight at once, and the dominant cost
   is whichever of the two is slower, roughly 0.5–2s either way, not their sum.
 - Ledger apply + parsers + `decide()`: microseconds — no I/O.
 - `scheduleScreening` (ACT only): microseconds — in-memory mock, no external API.
@@ -444,6 +485,7 @@ see `docs/app-guide.md` feature 14.
 | Session state, the per-turn orchestration (`appendTurn`, `runDecision`, `exchange`) | `server/src/sessions.ts` |
 | OpenAI call #1 — fact/signal extraction | `server/src/extract-turn.ts` |
 | OpenAI call #1b — soonest/decline/closing logistics judgment (conditional, concurrent with #1) | `server/src/logistics-llm.ts` |
+| OpenAI call #1c — red-flag symptom judgment (conditional, concurrent with #1) | `server/src/red-flag-llm.ts` |
 | The fact ledger itself (identity, dedup, contradiction) | `server/src/ledger.ts` |
 | The gates — the one and only decision-maker | `server/src/decide.ts` |
 | The guideline table + slot vocabulary the gates read | `server/src/requirements.ts` |

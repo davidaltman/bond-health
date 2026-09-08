@@ -532,6 +532,22 @@ Organized by how much they matter.
     has no call to hang up but reads exactly as unresponsive without it. Pinned down by the last two
     turns of `harness_inputs/text_mode_full_journey.json` and by
     `harness_inputs/already_resolved_closing_vs_details.json`.
+- **A live text conversation looped on the safety question itself**, and this one was worse than the
+  others because it's the gate that exists to catch a genuinely diagnostic presentation. "Yeah, I've
+  had bleeding." — answering the exact question `RED_FLAG_QUESTION` asks, in a word that question
+  itself uses — filled no slot, so `redFlagsAddressed` stayed false and the identical question came
+  back. Root cause: `requirements.ts` matched the four red-flag slots against a hand-written regex
+  list, and "is there blood" is not a closed vocabulary any more than "is this a decline" is — the
+  same category of judgment this app already moved to an LLM call everywhere else (see Features §9,
+  §12, and Module 9 of `docs/interview-prep.md`). The first fix attempt added the missing phrase to
+  the regex, which only patches the one transcript already seen; the real fix is
+  `classifyRedFlagSymptoms` in the new `server/src/red-flag-llm.ts`, run concurrently with
+  `extractTurn` only on the turn right after the red-flag question was asked, with the old regex
+  demoted to `RED_FLAG_FALLBACK_PATTERNS` — a fallback net, not the detector. Pinned down by
+  `harness_inputs/red_flag_bleeding_colloquial.json` (the exact reported phrasing) and
+  `harness_inputs/red_flag_open_ended_llm.json` (phrasing — "spotting," "pants fitting looser" — that
+  names none of the four tracked slots and would defeat any fixed list, proving the LLM call is the
+  actual detector and not the fallback regex).
 - **`transcripts/` contained interview-prep notes**, including files named after a real person, and
   `docs/prior-art-daphne-history-demo.md` named a previous employer's customers and internal system
   paths. Both were removed from the working tree, and `git filter-repo` rewrote history to strip
