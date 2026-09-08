@@ -147,9 +147,10 @@ plain thank-you with nothing further, or an indication there's nothing else
 they need.
 
 Answer "details" if the patient is asking for something about their existing
-booking/waitlist itself -- the date, time, clinic, confirmation number, or
-similar -- even if phrased indirectly ("where am I headed again?", "who's it
-with?", "remind me when that is").
+booking/waitlist itself -- the date, time, clinic, confirmation number, prep
+they were already told about, or similar -- even if phrased indirectly
+("where am I headed again?", "who's it with?", "remind me when that is",
+"what am I supposed to do again before it?").
 
 Answer "other" for anything else -- a new question, a change of topic, or
 something that doesn't fit either category.

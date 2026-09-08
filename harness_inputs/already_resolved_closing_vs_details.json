@@ -1,0 +1,109 @@
+{
+  "name": "already_resolved_closing_vs_details",
+  "mode": "text",
+  "sessionMode": "scheduling_only",
+  "description": "After a booking exists, already_resolved must classify follow-ups that the regex phrase list misses: a colloquial farewell, an indirect details question, and a reply that is neither. Those judgments come from classifyClosingIntent in logistics-llm.ts, fired only because session.resolution is already set -- an ordinary history-taking turn never pays for this call. scheduling_only is used so the scenario reaches booked without the full intake. Regex fallback when the classifier is null is pinned by scripts/test_closing_intent.mjs, not here.",
+  "patientName": "Priya",
+  "patientAge": 53,
+  "turns": [
+    {
+      "role": "user",
+      "content": "I need to get a colonoscopy scheduled -- my doctor already referred me.",
+      "expectOutcome": "ASK",
+      "expectGate": "safety"
+    },
+    {
+      "role": "user",
+      "content": "No bleeding, no weight loss, no changes.",
+      "expectOutcome": "ASK",
+      "expectGate": "readiness"
+    },
+    {
+      "role": "user",
+      "content": "Yes please.",
+      "expectOutcome": "ASK",
+      "expectGate": "scheduling"
+    },
+    {
+      "role": "user",
+      "content": "Anytime soon works.",
+      "expectOutcome": "ASK",
+      "expectGate": "escort"
+    },
+    {
+      "role": "user",
+      "content": "I don't have anyone, I'll manage on my own.",
+      "expectOutcome": "ASK",
+      "expectGate": "shipping"
+    },
+    {
+      "role": "user",
+      "content": "You can ship it to 88 Elm Street, Unit 4.",
+      "expectOutcome": "ACT",
+      "expectGate": "act"
+    },
+    {
+      "role": "user",
+      "content": "remind me where I'm headed again?",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectReplyContains": "confirmation number",
+      "expectReplyNotContains": "You're all set"
+    },
+    {
+      "role": "user",
+      "content": "who's it with?",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectReplyContains": "confirmation number",
+      "expectReplyNotContains": "You're all set"
+    },
+    {
+      "role": "user",
+      "content": "what am I supposed to do again before it?",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectReplyContains": "confirmation number",
+      "expectReplyNotContains": "You're all set"
+    },
+    {
+      "role": "user",
+      "content": "How long does the procedure itself usually take?",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectReplyContains": "You're all set",
+      "expectReplyNotContains": "take care"
+    },
+    {
+      "role": "user",
+      "content": "I think that covers it",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectReplyContains": "take care",
+      "expectReplyNotContains": "Anything else"
+    },
+    {
+      "role": "user",
+      "content": "nope, all set for now",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectReplyContains": "take care",
+      "expectReplyNotContains": "Anything else"
+    },
+    {
+      "role": "user",
+      "content": "cool, appreciate it",
+      "expectOutcome": "ASK",
+      "expectGate": "already_resolved",
+      "expectReplyContains": "take care",
+      "expectReplyNotContains": "Anything else"
+    }
+  ],
+  "expect": {
+    "everOutcome": ["ACT"],
+    "neverOutcome": ["STOP", "HANDOFF"],
+    "resolution": "booked",
+    "confirmationId": true,
+    "recommendation": null
+  }
+}

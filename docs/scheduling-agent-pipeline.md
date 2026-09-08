@@ -32,7 +32,7 @@ frontend/src/useVoiceSchedulingConversation.ts                                �
 server/src/sessions.ts: exchange()                                            │
      │                                                                        │
      ├─ 1. extractTurn()      → OpenAI call #1 (facts + signals)   ┐          │
-     ├─ 1b. classifySoonest/Decline → OpenAI call #1b, conditional┘ parallel │
+     ├─ 1b. classifySoonest/Decline/Closing → OpenAI #1b, cond.   ┘ parallel │
      ├─ 2. applyOperations()  → pure code, updates the ledger                 │
      ├─ 3. deterministic parsers (preference / escort / shipping) → pure code │
      ├─ 4. decide()           → pure code, one of ACT/ASK/STOP/HANDOFF        │
@@ -203,31 +203,36 @@ This also updates `session.signals` to this turn's signals (overwriting the prev
 
 ### Step 1b — logistics judgment: OpenAI call #1b, conditional and concurrent with Step 1
 
-`server/src/logistics-llm.ts`, `classifySoonestPreference()` / `classifyDecline()`. Kicked
+`server/src/logistics-llm.ts`, `classifySoonestPreference()` / `classifyDecline()` /
+`classifyClosingIntent()`. Kicked
 off from inside `appendTurn()` in the same `Promise.all()` as `extractTurn()` (Step 1) —
 *not* after it — so it costs no extra wall-clock time on the turns where it runs, and costs
 nothing at all on turns where it doesn't.
 
-Whether it runs, and which of the two functions, is decided *before* extraction even starts,
-from state that's already known: the sticky `bookingRequested` flag and the *previous*
-turn's decision gate — neither depends on what this turn's extraction is about to say.
+Whether it runs, and which of the three functions, is decided *before* extraction even starts,
+from state that's already known: the sticky `bookingRequested` flag, the *previous*
+turn's decision gate, or `session.resolution != null` for a post-booking follow-up — none
+of those depend on what this turn's extraction is about to say.
 
 | Function | Runs when | Judges |
 |---|---|---|
 | `classifySoonestPreference` | patient already asked to book (sticky), no preference recorded yet | does this reply mean "no preference, take the soonest opening" |
 | `classifyDecline` | the *previous* decision's gate was `"escort"` or `"shipping"`, no answer recorded yet | is this reply a decline (as opposed to actually providing the thing asked for) |
+| `classifyClosingIntent` | a booking or waitlist already exists (`session.resolution != null`) | is this reply a farewell, a request for booking/waitlist details, or something else |
 
 ```
-Input:  precedingAgentTurn (the question Daphne just asked), content (raw patient text)
-Output: { soonestOk: boolean }  or  { declined: boolean }
+Input:  precedingAgentTurn (the question Daphne just asked; unused for closing), content (raw patient text)
+Output: { soonestOk: boolean }  or  { declined: boolean }  or  { intent: "closing" | "details" | "other" }
 ```
 
-This exists because "soonest, no preference" and "that's a decline" are open-ended
-judgments over phrasing nobody enumerated in advance ("whatever's easiest," "I'll just grab
-one myself") — the same kind of call `extractTurn` already makes for clinical content,
-applied to logistics instead of history. A failed or skipped call here is never fatal: its
-own `.catch()` logs `extraction_failed` to the trace and returns `null`, and every call site
-below falls back to a plain regex read.
+This exists because "soonest, no preference", "that's a decline", and "I'm done / remind me
+when that is" are open-ended judgments over phrasing nobody enumerated in advance
+("whatever's easiest," "I'll just grab one myself," "I think that covers it") — the same
+kind of call `extractTurn` already makes for clinical content, applied to logistics instead
+of history. A failed or skipped call here is never fatal: its own `.catch()` logs
+`extraction_failed` to the trace and returns `null`, and every call site below falls back
+to a plain regex read (`CLOSING_PATTERN` / `BOOKING_DETAIL_PATTERN` in `decide.ts` for the
+closing case).
 
 ### Step 3 — deterministic parsers: pure code, conditionally run, LLM-judgment-assisted
 
@@ -267,7 +272,8 @@ Input (DecisionInput):
   askCounts                  -- how many times each slot has been asked
   bookingRequested           -- sticky "have they said yes to booking" flag
   schedulingPreference, escortContact, shippingAddress  -- from Step 3
-  patientTurn                -- raw text, used only by the already_resolved gate
+  closingIntent              -- classifyClosingIntent, only when already resolved; null otherwise
+  patientTurn                -- raw text; already_resolved regex fallback when closingIntent is null
   booking, waitlist          -- summaries of any existing resolution
   mode                        -- "full" | "scheduling_only"
   patientAge
@@ -392,7 +398,7 @@ than aspirational.
 | `advance_scheduling` tool call | ElevenLabs platform | browser (client tool) | every voice turn | no — just a pass-through |
 | `POST /api/session/:id/message` | browser | our Express server | every turn, both mediums | no — routing only |
 | `extractTurn` (OpenAI #1) | our server | `api.openai.com` | every turn with non-empty patient text | facts/signals only, not the outcome |
-| `classifySoonestPreference` / `classifyDecline` (OpenAI #1b) | our server | `api.openai.com` | conditionally — same turns the preference/escort/shipping parsers below apply to; started concurrently with #1, not after it | soonest-vs-specific / decline-vs-provided judgment only, not the outcome |
+| `classifySoonestPreference` / `classifyDecline` / `classifyClosingIntent` (OpenAI #1b) | our server | `api.openai.com` | conditionally — preference/escort/shipping parsers, or a post-booking follow-up; started concurrently with #1, not after it | soonest-vs-specific / decline-vs-provided / closing-vs-details judgment only, not the outcome |
 | `applyOperations` | our server | our server (in-process) | every turn | no — mechanical |
 | preference/escort/shipping parsers | our server | our server (in-process) | conditionally | phone/email/day-of-week: no — regex. soonest/decline: LLM judgment from #1b when available, regex fallback otherwise |
 | `decide()` | our server | our server (in-process) | every turn | **yes — this is the one decision-maker** |
@@ -415,7 +421,7 @@ identical minus the top and bottom ElevenLabs layers.
 Per patient turn, voice mode:
 - ElevenLabs ASR + turn-detection: near-instant once the patient stops talking (not our code).
 - `extractTurn` (OpenAI #1) and, on turns where it applies, `classifySoonestPreference` /
-  `classifyDecline` (OpenAI #1b) run **concurrently** via `Promise.all` — the dominant cost
+  `classifyDecline` / `classifyClosingIntent` (OpenAI #1b) run **concurrently** via `Promise.all` — the dominant cost
   is whichever of the two is slower, roughly 0.5–2s either way, not their sum.
 - Ledger apply + parsers + `decide()`: microseconds — no I/O.
 - `scheduleScreening` (ACT only): microseconds — in-memory mock, no external API.
@@ -437,7 +443,7 @@ see `docs/app-guide.md` feature 14.
 |---|---|
 | Session state, the per-turn orchestration (`appendTurn`, `runDecision`, `exchange`) | `server/src/sessions.ts` |
 | OpenAI call #1 — fact/signal extraction | `server/src/extract-turn.ts` |
-| OpenAI call #1b — soonest/decline logistics judgment (conditional, concurrent with #1) | `server/src/logistics-llm.ts` |
+| OpenAI call #1b — soonest/decline/closing logistics judgment (conditional, concurrent with #1) | `server/src/logistics-llm.ts` |
 | The fact ledger itself (identity, dedup, contradiction) | `server/src/ledger.ts` |
 | The gates — the one and only decision-maker | `server/src/decide.ts` |
 | The guideline table + slot vocabulary the gates read | `server/src/requirements.ts` |

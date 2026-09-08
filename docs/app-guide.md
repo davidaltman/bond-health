@@ -160,13 +160,19 @@ reading back what ElevenLabs actually persisted (`built_in_tools.end_call` came 
 it was sent there; moved into `tools`, it stuck). Fixed live and in
 `agent_configs/05_daphne_scheduling_voice.create.json` — see that file's `metadata.notes` for the full
 account. The other half of the same transcript — the repeated "anything else?" line itself, independent
-of whether the call ever hangs up — is `decide.ts`'s new `CLOSING_PATTERN` branch on the
-`already_resolved` gate: once the patient's said "no, that's it" (or similar), it answers with an
-actual goodbye instead of asking again. That half matters for text mode too, which has no call to
-end but reads exactly as unresponsive if it repeats itself after a patient says they're done.
+of whether the call ever hangs up — is `decide.ts`'s already_resolved gate
+closing on a farewell: once the patient's said "no, that's it" (or similar,
+including phrasing the old `CLOSING_PATTERN` list would miss), it answers
+with an actual goodbye instead of asking again. The judgment is
+`classifyClosingIntent` in `logistics-llm.ts`, passed into `decide()` as
+already-resolved data so the gate loop stays a pure function. That half
+matters for text mode too, which has no call to end but reads exactly as
+unresponsive if it repeats itself after a patient says they're done.
 
 See it: the **"Voice"** toggle in the header, and `frontend/src/components/VoiceSchedulingPanel.tsx`;
-`harness_inputs/text_mode_full_journey.json`'s last two turns for the `CLOSING_PATTERN` regression.
+`harness_inputs/text_mode_full_journey.json`'s last two turns, and
+`harness_inputs/already_resolved_closing_vs_details.json` for phrasing the
+regex misses.
 
 ### 10. A pickup escort ask that never blocks
 
@@ -201,10 +207,12 @@ vs. `sendEscortInvite` in `scheduler.ts`). And because a live call surfaced this
 an existing booking afterward — "what's the date again?", "what's my confirmation number?" — no
 longer gets the same "you're all set, anything else?" line regardless of the question. The
 `already_resolved` gate now recognizes a question about the booking's date, clinic, or confirmation
-number and answers with the real values pulled from the booking itself, not a canned non-answer. This
-is the one place in `decide.ts` that reads a turn's raw text directly rather than structured
-facts/signals — there's nothing to extract here, the answer already exists on the booking made
-earlier in the session.
+number and answers with the real values pulled from the booking itself, not a canned non-answer.
+Open-ended phrasing ("who's it with?", "can you just repeat all that?") is classified by
+`classifyClosingIntent` in `logistics-llm.ts`, run only after a booking or waitlist exists, and
+passed into `decide()` as `closingIntent`. `CLOSING_PATTERN` / `BOOKING_DETAIL_PATTERN` on the raw
+turn text are the fallback for when that call fails or wasn't made — `decide()` itself never calls
+out.
 
 See it: ask "what day is my appointment?" or similar after booking, in any medium, and
 `server/src/decide.ts`'s `already_resolved` gate.
@@ -519,9 +527,11 @@ Organized by how much they matter.
   - Independent of whether the call ever actually hangs up: once a booking existed, saying "no,
     that's it" got the same "anything else I can help with?" line back, instead of an acknowledgment
     that the conversation was over. `decide.ts`'s `already_resolved` gate now recognizes a farewell
-    (`CLOSING_PATTERN`) and closes rather than re-asking — this half matters for text mode too, which
+    (`classifyClosingIntent`, with `CLOSING_PATTERN` as the fallback) and closes rather than
+    re-asking — this half matters for text mode too, which
     has no call to hang up but reads exactly as unresponsive without it. Pinned down by the last two
-    turns of `harness_inputs/text_mode_full_journey.json`.
+    turns of `harness_inputs/text_mode_full_journey.json` and by
+    `harness_inputs/already_resolved_closing_vs_details.json`.
 - **`transcripts/` contained interview-prep notes**, including files named after a real person, and
   `docs/prior-art-daphne-history-demo.md` named a previous employer's customers and internal system
   paths. Both were removed from the working tree, and `git filter-repo` rewrote history to strip

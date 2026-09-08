@@ -281,8 +281,9 @@ older inline `tools` array for its one client tool — for that format, system t
 alongside it in `tools`, not in `built_in_tools`. The call never actually hung up as a result. A
 second, independent bug in the same transcript made it look worse than it was: `decide.ts`'s
 `already_resolved` gate answered a plain "no, that's it" with the same "anything else I can help
-with?" line it uses for everything else once booked, instead of closing out — fixed with a
-`CLOSING_PATTERN` check, which matters for text mode too, since it has no call to hang up but reads
+with?" line it uses for everything else once booked, instead of closing out — fixed by
+`classifyClosingIntent` in `logistics-llm.ts` (with `CLOSING_PATTERN` as the fallback), which
+matters for text mode too, since it has no call to hang up but reads
 identically unresponsive without this. See app-guide's Features §9 and "Resolved since earlier
 drafts," and the last two turns of `text_mode_full_journey` in the eval suite.
 
