@@ -469,6 +469,10 @@ Organized by how much they matter.
   (reject an answer that looks exactly like a bare day/time phrase) or a way to detect the abandonment
   client-side (unconfirmed whether `@elevenlabs/client` exposes that event at all) — a real design
   choice, not a one-line patch.
+- **A sibling desync, where the tool gets re-called with its own last output instead of a real
+  reply, is fixed — see "Resolved since earlier drafts" below.** The exact-echo case is caught; a
+  *new* utterance landing on a question the patient never heard (the barge-in case just above) is
+  not, since there's no verbatim signature to key off of there.
 
 **Resolved since earlier drafts of this document:**
 
@@ -548,6 +552,22 @@ Organized by how much they matter.
   `harness_inputs/red_flag_open_ended_llm.json` (phrasing — "spotting," "pants fitting looser" — that
   names none of the four tracked slots and would defeat any fixed list, proving the LLM call is the
   actual detector and not the fallback regex).
+- **A live voice call skipped the shipping question entirely, and it read back a decline the
+  patient never gave.** `conv_8201m22mqqnafgza85n87yx7csbg`: the shipping question came back from
+  `advance_scheduling` as a tool result, was never actually spoken to the patient (no agent
+  `message` entry for it in the raw transcript, unlike every other question in the same call), and
+  the very next `advance_scheduling` call arrived with `message` set to that exact question text —
+  ElevenLabs re-invoking the tool with its own last output, not a real reply. The question's own
+  wording ("...pick one up yourself at a pharmacy...") matched `shipping.ts`'s `DECLINE_PATTERN`,
+  so the gate silently recorded "no shipping address" — worse than the barge-in case above, since
+  here the wrong answer was actively read out of the question itself, not just misfiled onto the
+  wrong slot. Unlike the barge-in case, this one has an exact, checkable signature: the "reply" is
+  byte-for-byte identical to Daphne's own immediately preceding line, which a real patient never
+  produces. `appendTurn` in `sessions.ts` now detects that exact echo and skips extraction/`decide()`
+  entirely — same treatment as an empty turn — leaving the session waiting on the same question
+  rather than marking it wrongly answered. See
+  `docs/bug-investigation-conv_8201m22mqqnafgza85n87yx7csbg.md` and
+  `harness_inputs/shipping_echo_desync.json`.
 - **`transcripts/` contained interview-prep notes**, including files named after a real person, and
   `docs/prior-art-daphne-history-demo.md` named a previous employer's customers and internal system
   paths. Both were removed from the working tree, and `git filter-repo` rewrote history to strip

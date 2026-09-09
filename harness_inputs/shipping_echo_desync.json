@@ -1,0 +1,63 @@
+{
+  "name": "shipping_echo_desync",
+  "mode": "text",
+  "sessionMode": "scheduling_only",
+  "description": "Live desync from conv_8201m22mqqnafgza85n87yx7csbg: the shipping question came back as a tool result but was never actually spoken to the patient, and the very next advance_scheduling call arrived with `message` set to that exact question text instead of a real reply. Its own wording ('...pick one up yourself at a pharmacy...') matches shipping.ts's DECLINE_PATTERN, so unguarded this silently marks the shipping gate answered with no address before the patient ever heard the ask. sessions.ts's echo guard (appendTurn's isEchoOfLastAgentTurn) must recognize a patient turn that verbatim-echoes Daphne's own immediately preceding line, skip extraction/decide entirely, and re-ask the identical question rather than treating it as a decline. See docs/bug-investigation-conv_8201m22mqqnafgza85n87yx7csbg.md.",
+  "patientName": "David",
+  "patientAge": 55,
+  "turns": [
+    {
+      "role": "user",
+      "content": "A colonoscopy.",
+      "expectOutcome": "ASK",
+      "expectGate": "safety"
+    },
+    {
+      "role": "user",
+      "content": "No, none of those.",
+      "expectOutcome": "ASK",
+      "expectGate": "readiness"
+    },
+    {
+      "role": "user",
+      "content": "Sure, please.",
+      "expectOutcome": "ASK",
+      "expectGate": "scheduling"
+    },
+    {
+      "role": "user",
+      "content": "Monday or Tuesday mornings.",
+      "expectOutcome": "ASK",
+      "expectGate": "escort"
+    },
+    {
+      "role": "user",
+      "content": "The email address is victory@gmail.com.",
+      "expectOutcome": "ASK",
+      "expectGate": "shipping",
+      "expectReplyContains": "ship your prep kit"
+    },
+    {
+      "role": "user",
+      "content": "Last thing \u2014 where should I ship your prep kit so it arrives about a week before your appointment? If you'd rather pick one up yourself at a pharmacy, that's fine too.",
+      "expectOutcome": "ASK",
+      "expectGate": "shipping",
+      "expectReplyContains": "ship your prep kit"
+    },
+    {
+      "role": "user",
+      "content": "Ship it to 789 Birch Lane, Riverside.",
+      "expectOutcome": "ACT",
+      "expectGate": "act",
+      "expectReplyContains": "789 Birch Lane",
+      "expectReplyNotContains": "No shipping address on file"
+    }
+  ],
+  "expect": {
+    "finalOutcome": "ACT",
+    "neverOutcome": ["STOP", "HANDOFF"],
+    "resolution": "booked",
+    "confirmationId": true,
+    "recommendation": null
+  }
+}

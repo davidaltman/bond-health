@@ -165,6 +165,15 @@ export interface TurnResult {
   resolution: SchedulingResult | null;
 }
 
+/** Whitespace/case-insensitive comparison for the echo guard below -- exact
+ *  content match only (no fuzzy/substring matching), since the failure mode
+ *  it exists for reproduces the agent's own last line byte-for-byte. A loose
+ *  match would risk mistaking a patient's genuine, if unusual, repetition of
+ *  Daphne's own words for a desync. */
+function normalizeForEchoCheck(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 /**
  * Records a turn and, for patient turns, extracts what it changes.
  *
@@ -191,12 +200,37 @@ export async function appendTurn(
     detail: `${role}: ${content.slice(0, 120)}`,
   });
 
-  if (role !== "user" || !content.trim()) {
+  // Guards against a live desync seen in conv_8201m22mqqnafgza85n87yx7csbg:
+  // the shipping question came back from advance_scheduling as a tool
+  // result, was never actually spoken to the patient (no agent "message"
+  // entry for it in the transcript), and the very next advance_scheduling
+  // call arrived with `message` set to that exact question text -- the
+  // ElevenLabs agent re-invoking the tool with its own last output instead
+  // of a real reply. Processing that as if the patient said it is worse
+  // than doing nothing: the shipping question's own wording ("...pick one
+  // up yourself at a pharmacy...") matches DECLINE_PATTERN, so the gate
+  // silently recorded "no address" before the patient ever heard the ask.
+  // A patient reply that happens to exactly echo Daphne's own immediately
+  // preceding line, whitespace/case aside, is never a genuine answer --
+  // treat it exactly like an empty turn: skip extraction and decide()
+  // entirely, and leave askCounts/ledger/resolution untouched so the next
+  // real reply is judged against the same question, not one already
+  // (wrongly) marked answered. See
+  // docs/bug-investigation-conv_8201m22mqqnafgza85n87yx7csbg.md.
+  const lastAgentTurn = [...session.turns].slice(0, -1).reverse().find((candidate) => candidate.role === "agent");
+  const isEchoOfLastAgentTurn =
+    role === "user" && lastAgentTurn != null && normalizeForEchoCheck(content) === normalizeForEchoCheck(lastAgentTurn.content);
+
+  if (role !== "user" || !content.trim() || isEchoOfLastAgentTurn) {
     session.trace.push({
       turn: turn.index,
       at: new Date().toISOString(),
       kind: "extraction_skipped",
-      detail: role === "user" ? "empty patient turn" : "agent turn, nothing to extract",
+      detail: isEchoOfLastAgentTurn
+        ? "patient turn is a verbatim echo of Daphne's own preceding line -- tool/turn-taking desync, not a real reply; decision left unchanged"
+        : role === "user"
+          ? "empty patient turn"
+          : "agent turn, nothing to extract",
     });
     return {
       turnIndex: turn.index,
