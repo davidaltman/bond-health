@@ -77,7 +77,6 @@ export default function App() {
     transcript,
     errorMessage,
     facts,
-    signals,
     decision,
     resolution,
     start,
@@ -106,8 +105,6 @@ export default function App() {
   }
 
   const activeFacts = medium === "text" ? text.facts : medium === "voice_scheduling" ? voiceScheduling.facts : facts;
-  const activeSignals =
-    medium === "text" ? text.signals : medium === "voice_scheduling" ? voiceScheduling.signals : signals;
   const activeDecision =
     medium === "text" ? text.decision : medium === "voice_scheduling" ? voiceScheduling.decision : decision;
   const activeResolution =
@@ -216,7 +213,7 @@ export default function App() {
             onStop={stop}
             showLegacyControls={medium === "voice_legacy"}
           />
-          <LiveFactsPanel facts={activeFacts} signals={activeSignals} />
+          <LiveFactsPanel facts={activeFacts} />
         </div>
 
         <div className="app-column app-column-center">

@@ -1,12 +1,11 @@
-import type { ClinicalFact, ConversationSignals } from "../types";
+import type { ClinicalFact } from "../types";
 
 /**
  * Debug view of the clinical memory as it fills in mid-call.
  *
- * Two things it makes visible on purpose. Facts and signals are shown apart,
- * because a signal must never harden into a fact. And a stated negative renders
- * as an explicit "never" row rather than as nothing, since "the patient has
- * never been screened" and "we haven't asked yet" lead to opposite next moves.
+ * A stated negative renders as an explicit "never" row rather than as
+ * nothing, since "the patient has never been screened" and "we haven't
+ * asked yet" lead to opposite next moves.
  */
 
 const STATUS_LABEL: Record<ClinicalFact["qualifiers"]["status"], string> = {
@@ -16,25 +15,11 @@ const STATUS_LABEL: Record<ClinicalFact["qualifiers"]["status"], string> = {
   unknown: "unsure",
 };
 
-const READINESS_LABEL: Record<ConversationSignals["readiness"], string> = {
-  not_raised: "not raised",
-  exploring: "exploring",
-  ambivalent: "ambivalent",
-  ready: "ready",
-  explicit_request: "explicitly asked",
-};
-
 function subjectLabel(subject: string): string {
   return subject === "self" ? "Patient" : subject.charAt(0).toUpperCase() + subject.slice(1);
 }
 
-export function LiveFactsPanel({
-  facts,
-  signals,
-}: {
-  facts: ClinicalFact[];
-  signals: ConversationSignals | null;
-}) {
+export function LiveFactsPanel({ facts }: { facts: ClinicalFact[] }) {
   const grouped = new Map<string, ClinicalFact[]>();
   for (const fact of facts) {
     const key = subjectLabel(fact.subject);
@@ -83,25 +68,6 @@ export function LiveFactsPanel({
           ))}
         </div>
       )}
-
-      <div className="live-signals">
-        <div className="live-signals-label">
-          How they sound <span className="live-signals-note">(not part of the record)</span>
-        </div>
-        {signals ? (
-          <div className="live-signals-row">
-            <span className="signal-chip">{signals.tone}</span>
-            {signals.hesitation !== "none" ? (
-              <span className="signal-chip">{signals.hesitation} hesitation</span>
-            ) : null}
-            <span className={`signal-chip signal-readiness-${signals.readiness}`}>
-              {READINESS_LABEL[signals.readiness]}
-            </span>
-          </div>
-        ) : (
-          <div className="live-signals-row live-signals-empty">no reading yet</div>
-        )}
-      </div>
     </div>
   );
 }

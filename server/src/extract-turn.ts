@@ -130,6 +130,15 @@ must produce no operation at all. If a reply mixes the two -- "Tuesday
 morning, and I should also mention I've been having some cramping" -- record
 only the clinical half.
 
+A pickup-escort contact ("my husband can drive me," "no one, I'll figure it
+out") and a shipping address for the prep kit are not clinical facts either --
+both answer logistics questions asked after booking, not clinical ones, and
+must produce no operation at all. This applies whether the reply provides a
+contact/address or declines to. Do not invent an attribute like "calendar
+invite recipient" or "shipping address" to hold this -- there is no clinical
+category it belongs in, and it is already captured by a dedicated parser
+outside this ledger.
+
 SIGNALS
 
 Report how the patient sounds in this reply, not what they said.

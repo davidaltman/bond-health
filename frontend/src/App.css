@@ -624,55 +624,6 @@
   color: var(--text-muted);
 }
 
-.live-signals {
-  border-top: 1px dashed var(--border);
-  padding-top: 12px;
-}
-
-.live-signals-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-}
-
-.live-signals-note {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.live-signals-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.live-signals-empty {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.signal-chip {
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: #eef0f6;
-  color: var(--text-muted);
-}
-
-.signal-readiness-explicit_request {
-  background: #e6f7ee;
-  color: #1a7f4b;
-}
-
-.signal-readiness-ambivalent {
-  background: #fff4e0;
-  color: #9a6206;
-}
-
 /* --- decision engine (Phases 2-3) --------------------------------------- */
 
 .decision-panel {

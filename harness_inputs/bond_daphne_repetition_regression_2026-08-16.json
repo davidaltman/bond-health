@@ -1,0 +1,39 @@
+[
+  {
+    "scenario_id": "bond_daphne_personal_history_dead_tool_no_repeat",
+    "feedback": "Gold = Daphne should never ask about the same category/relative twice in a row, and should never say anything about 'saving' or 'logging' a fact. Regression case for a bug found on 2026-08-16: the log_health_fact webhook pointed at a non-existent endpoint (https://api.bondhealth.example/...), which 500'd on every call. Each failed call sometimes triggered 1-2 retries, and after settling the LLM emitted an extra spoken turn with no new user input to react to, producing near-duplicate questions seconds apart (e.g. asking about the father's health at t=283s, then again at t=286s with no user turn between). Fix: log_health_fact removed from tool_ids on 02_daphne_personal_history and 03_daphne_family_history; the prompts now explicitly say there is no live logging tool and instruct the agent not to circle back and re-ask something already asked. Replay this scenario once a text-mode harness exists for Bond (see refermat-replay-test / kali-collect-replay-test skills for the pattern) and check the response transcript for: (a) no duplicate/near-duplicate agent turns without an intervening user turn, (b) no mention of 'saving', 'logging', or 'trouble saving' in agent speech, (c) turn latency doesn't spike >5s per turn (no tool round-trips left in this stage).",
+    "source_transcript": "Bond sandbox test call 2026-08-16, conv_7001m0649qxqftvbtzvxnns81nk0 (agent_4201m063yfvqfjj8pm933nkfdywb intake -> 02 personal history -> 03 family history -> 04 summary). Full annotated transcript: bond_health_demo/transcripts/sandbox_test_call_2026-08-16.md (gitignored, not committed).",
+    "dynamic_variables": {
+      "patient_first_name": "Jordan",
+      "patient_id": "demo-patient-001",
+      "agent_name": "Daphne",
+      "conversation_session_id": "demo-session-001"
+    },
+    "scripted_customer_turns": [
+      "Yes, it is.",
+      "I've had a concussion when I was three years old, I was treated in the hospital. I broke my arm when I was 10. I had a fractured rib at some point. I had a colonoscopy when I was 49, and a robotic hernia repair with three incisions when I was 52. That's it.",
+      "I'm taking finasteride 2.5 milligrams, and terbinafine daily, not sure of the dose.",
+      "No, I don't have anything.",
+      "No, that's it."
+    ]
+  },
+  {
+    "scenario_id": "bond_daphne_family_history_no_transition_duplicate",
+    "feedback": "Gold = when Family History transfers to Summary, the closing/recap sentence should be said exactly once, not twice. Regression case for a bug found on 2026-08-16: 03's TRANSITION instruction told it to preview 'I'm going to quickly recap what we've discussed today' right before transferring, and then 04 (Summary) delivered its own near-identical recap-intro sentence immediately after transfer -- an exact/near-exact duplicate spoken back to back (t=378s vs t=384s in the source transcript). Fix: 03's prompt now says a short one-line thank-you only and explicitly must NOT preview or recap; 04's prompt now has an explicit 'DO NOT REPEAT THE PRIOR AGENT' instruction and starts its own summary directly. Replay once a harness exists: check that the phrase 'I'm going to' / 'let's recap' / equivalent does not appear twice across the 03->04 boundary in the transcript.",
+    "source_transcript": "Bond sandbox test call 2026-08-16, conv_7001m0649qxqftvbtzvxnns81nk0. Full annotated transcript: bond_health_demo/transcripts/sandbox_test_call_2026-08-16.md (gitignored, not committed).",
+    "dynamic_variables": {
+      "patient_first_name": "Jordan",
+      "patient_id": "demo-patient-001",
+      "agent_name": "Daphne",
+      "conversation_session_id": "demo-session-001"
+    },
+    "scripted_customer_turns": [
+      "My mom, when she was 83, two years ago, had leukemia, stage four, and was treated with chemotherapy for six months, and now she has been clear for the last two scans.",
+      "Yes, that's right.",
+      "Let's move on to siblings.",
+      "I have one half sister.",
+      "Yeah, she's still living. She is 45 years old. She's healthy.",
+      "Let's stop here."
+    ]
+  }
+]
