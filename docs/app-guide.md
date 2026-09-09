@@ -568,6 +568,17 @@ Organized by how much they matter.
   rather than marking it wrongly answered. See
   `docs/bug-investigation-conv_8201m22mqqnafgza85n87yx7csbg.md` and
   `harness_inputs/shipping_echo_desync.json`.
+- **The same live call's ledger also showed a nonsense fact from its opening line** — "I need to
+  schedule a colonoscopy," said before Daphne had asked anything, got logged as `condition:
+  colonoscopy scheduling`, status unknown ("unsure" in the UI), instead of being recognized purely
+  as a request. `extract-turn.ts` already had a rule for this ("a request is not a fact"), but its
+  only worked example ("can you book it for me") never names the procedure, so a request that does
+  name it sometimes slips through. Mitigated with a directly-matching example added to the same
+  instruction — not provably fixed, since this is a probabilistic model miss with no deterministic
+  trigger to pin a regression test against (46 repeats of the exact reported phrase came back clean
+  both before and after the change, which only shows the miss rate is low, not that it dropped).
+  Mostly cosmetic: the bogus fact's status is `unknown`, which never satisfies a gate on its own —
+  see `docs/bug-investigation-colonoscopy-scheduling-ledger-noise.md`.
 - **`transcripts/` contained interview-prep notes**, including files named after a real person, and
   `docs/prior-art-daphne-history-demo.md` named a previous employer's customers and internal system
   paths. Both were removed from the working tree, and `git filter-repo` rewrote history to strip

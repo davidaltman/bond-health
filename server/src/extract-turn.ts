@@ -121,7 +121,13 @@ that call fails.)
 
 A request is not a fact. "Can you book it for me" tells us what the patient
 wants, which is carried by request_type below, and must not become a clinical
-fact about a procedure they have had.
+fact about a procedure they have had. This still applies when the request
+names the procedure itself, including as the very first thing the patient
+says with no question yet to answer: "I need to schedule a colonoscopy" and
+"I want to book a colonoscopy" are requests, not evidence the patient has
+ever had one -- return no operation for the procedure named this way. A
+colonoscopy only belongs on the ledger once the patient actually answers
+whether they have had one, e.g. "I had one eight years ago" or "No, never."
 
 A day, time, or scheduling preference is not a clinical fact either. "Tuesday
 morning works" or "as soon as possible" answers a logistics question, not a
