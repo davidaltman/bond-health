@@ -1,0 +1,55 @@
+flowchart TB
+  subgraph input [This turn]
+    Text[patientTurn: raw string]
+    Prior[prior decision.gate<br/>bookingRequested<br/>resolution?]
+  end
+
+  subgraph llm1 [OpenAI — concurrent]
+    Extract["extract-turn.ts<br/>operations[] + ConversationSignals"]
+    Logistics["logistics-llm.ts<br/>soonestOk / declined / closingIntent"]
+  end
+
+  subgraph code [Pure TypeScript]
+    Apply["ledger.ts<br/>applyOperations — identity, dedup, contradict"]
+    Pref["preference.ts<br/>day / time / soonest"]
+    Esc["escort.ts<br/>name / email / phone / decline"]
+    Ship["shipping.ts<br/>address or decline"]
+    Req["requirements.ts<br/>slots + guideline table"]
+    Decide["decide.ts<br/>first matching gate wins"]
+  end
+
+  subgraph act [ACT side effects — scheduler.ts]
+    Search[searchSlots]
+    Pick[pickSlot]
+    Hold[holdSlot → confirmHold]
+    Kit[scheduleDrinkPrepShipment]
+    Invites[sendEscortInvite<br/>sendPatientInvite]
+  end
+
+  subgraph out [What the patient hears]
+    Compose["compose.ts<br/>acknowledgment + decision.say"]
+    Reply[reply.text]
+  end
+
+  Text --> Extract
+  Prior --> Logistics
+  Text --> Logistics
+  Extract --> Apply
+  Apply --> Decide
+  Logistics --> Pref
+  Logistics --> Esc
+  Logistics --> Ship
+  Text --> Pref
+  Text --> Esc
+  Text --> Ship
+  Pref --> Decide
+  Esc --> Decide
+  Ship --> Decide
+  Req --> Decide
+  Decide -->|ASK / STOP / HANDOFF| Compose
+  Decide -->|ACT| Search
+  Search --> Pick --> Hold --> Kit
+  Hold --> Invites
+  Kit --> Compose
+  Invites --> Compose
+  Compose --> Reply

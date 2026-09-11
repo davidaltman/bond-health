@@ -1,0 +1,44 @@
+sequenceDiagram
+  autonumber
+  participant Patient
+  participant Mouth as Text or Voice mouth
+  participant Ex as sessions.exchange
+  participant Ext as extractTurn (OpenAI #1)
+  participant Log as logistics-llm (OpenAI #1b)
+  participant Led as ledger.applyOperations
+  participant Parsers as preference / escort / shipping
+  participant Dec as decide
+  participant Sched as scheduler (ACT only)
+  participant Comp as composeReply (OpenAI #2)
+
+  Patient->>Mouth: utterance
+  Mouth->>Ex: POST /api/session/:id/message {content}
+
+  par concurrent
+    Ex->>Ext: factsOnFile + precedingAgentTurn + patientTurn
+    Ext-->>Ex: operations + signals
+  and
+    Note over Log: only if a logistics gate is waiting
+    Ex->>Log: classifySoonest / Decline / ClosingIntent
+    Log-->>Ex: soonestOk | declined | intent | null
+  end
+
+  Ex->>Led: operations
+  Led-->>Ex: ClinicalFact[] + this-turn signals
+  Ex->>Parsers: raw text + LLM judgment or regex fallback
+  Parsers-->>Ex: schedulingPreference / escortContact / shippingAddress
+  Ex->>Dec: DecisionInput from session state
+  Dec-->>Ex: ACT | ASK | STOP | HANDOFF + authored say
+
+  alt outcome is ACT
+    Ex->>Sched: scheduleScreening + invites
+    Sched-->>Ex: booked or waitlisted + confirmation copy
+  end
+
+  alt not ACT, and not a neutral non-repeat
+    Ex->>Comp: decision.say + signals
+    Comp-->>Ex: acknowledgment prepended, substance untouched
+  end
+
+  Ex-->>Mouth: reply.text + facts + decision + resolution
+  Mouth-->>Patient: Daphne's line

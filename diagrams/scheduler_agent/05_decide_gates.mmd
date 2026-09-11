@@ -1,0 +1,29 @@
+flowchart TD
+  Start[DecisionInput] --> Scope{1. scope<br/>requestType = clinical_judgment?}
+  Scope -->|yes| STOP[STOP]
+  Scope -->|no| Safety{2. safety<br/>active red-flag fact?}
+  Safety -->|yes| HANDOFF[HANDOFF]
+  Safety -->|no| Resolved{alreadyResolved?}
+  Resolved -->|yes| Closing[ASK via already_resolved<br/>farewell / details / generic]
+  Resolved -->|no| Mode{mode = full?}
+
+  Mode -->|yes| Suff{3. sufficiency<br/>required slot unmet?}
+  Suff -->|asked 3x| Stuck[HANDOFF via stuck]
+  Suff -->|yes| ASK1[ASK that slot]
+  Suff -->|no| Age{age unknown?}
+  Age -->|yes| ASKAge[ASK How old are you?]
+  Age -->|no| Elig{4. eligibility<br/>screening indicated?}
+  Elig -->|no| ASKElig[ASK not yet due]
+  Elig -->|yes| Symptoms
+  Mode -->|scheduling_only| Symptoms
+
+  Symptoms{5. safety<br/>red flags ever asked?} -->|no| ASKRF[ASK red-flag question]
+  Symptoms -->|yes| Ready{6. readiness<br/>wantsToBook?}
+  Ready -->|no| ASKReady[ASK would you like an appointment?]
+  Ready -->|yes| Pref{7. scheduling<br/>preference on file?}
+  Pref -->|no| ASKPref[ASK day or time]
+  Pref -->|yes| Esc{8. escort<br/>contact asked?}
+  Esc -->|no| ASKEsc[ASK pickup contact]
+  Esc -->|yes| Ship{9. shipping<br/>address asked?}
+  Ship -->|no| ASKShip[ASK where to ship the prep kit]
+  Ship -->|yes| ACT[ACT]

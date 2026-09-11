@@ -1,0 +1,14 @@
+flowchart TB
+  ACT[ACT from decide] --> SS["scheduleScreening(bookWithinDays, preference, shippingAddress)"]
+  SS --> Search["searchSlots — two clinics, morning/afternoon, nothing inside 21 days"]
+  Search -->|none in window| WL[waitlisted + waitlistId]
+  Search -->|slots exist| Pick["pickSlot — match day/time, else closest, else soonest"]
+  Pick --> Hold["holdSlot → confirmHold"]
+  Hold --> Kit["scheduleDrinkPrepShipment<br/>arrives appointment minus 7 days"]
+  Kit --> Booked[Booking: confirmationId, slot, prepInstructions]
+
+  ACT --> EI["sendEscortInvite(escortContact)<br/>to = contact.label"]
+  Booked --> PI["sendPatientInvite(patientName, slot)"]
+
+  Booked --> Say["decision.say overwritten in code:<br/>clinic, time, confirmation id,<br/>escort invite line, patient calendar line,<br/>prep-kit line"]
+  WL --> SayWL["decision.say = waitlist reason + next step"]
